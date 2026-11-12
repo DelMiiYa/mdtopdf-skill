@@ -94,5 +94,60 @@ Each role agent (§8 of `docs/HANDOFF.md`) appends its status and handoff notes 
 - **Unfinished items / blockers:** None.
 
 ### Next Up: §8.3 Test Agent & §8.4 Review Agent
-- [ ] **§8.3 Test Agent:** Expand `tests/` to cover all CLI flags, validation edge cases (`NaN`/`inf`), exit codes (`0`, `2`, `3`, `4`, `5`), `--json` schema, `stdin`, UTF-8 BOM, Windows paths with spaces/Unicode, `@pytest.mark.e2e` browser tests, and SSOT guard test (no copied `def render_pdf` / `def build_css`).
+- [x] **§8.3 Test Agent:** Expand `tests/` to cover all CLI flags, validation edge cases (`NaN`/`inf`), exit codes (`0`, `2`, `3`, `4`, `5`), `--json` schema, `stdin`, UTF-8 BOM, Windows paths with spaces/Unicode, `@pytest.mark.e2e` browser tests, and SSOT guard test (no copied `def render_pdf` / `def build_css`).
+- [ ] **§8.4 Review Agent:** Adversarial review across SSOT, §5 contract, path-traversal/security, cross-platform behavior, `SKILL.md` prompt-injection/trigger quality, packaging, and CI; record findings in `REVIEW.md`.
+
+---
+
+## §8.3 Test Agent – Completed
+**Date:** 2026-11-12
+
+### Completed in §8.3
+- Authored comprehensive test suite in `tests/` without modifying `src/mdtopdf_skill/cli.py`:
+  - `tests/test_cli_args.py`:
+    - Full CLI flag parsing & default options mapping.
+    - Numerical range validation: `--font-size` in `[6.0, 72.0]` and `--line-height` in `[1.0, 3.0]`, testing boundary and out-of-boundary values.
+    - Non-finite float rejection: `nan`, `inf`, `-inf`, `Infinity` (case-insensitive) rejected with exit code 2.
+    - Image dimension validation: `--img-max-width` and `--img-max-height` (positive ints >= 1, non-finite/float/negative rejection).
+    - Case-insensitive margin presets (`compact`, `standard`, `comfortable`, `wide` matching upstream `MARGIN_PRESETS`) and raw CSS margin validation.
+    - Accent color validation (hex `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, valid color names, invalid syntax rejection).
+    - Boolean and string flags: `--keep-missing-images`, `--no-keep-together`, `--allow-outside-base-dir`, `--json`, `--quiet`, `--title`.
+    - Stdin `-` requires `--base-dir` validation.
+    - `--version` and `--help` exit 0 behavior.
+  - `tests/test_cli_execution.py`:
+    - Full coverage of all exit codes: `0` (success & quiet mode), `2` (bad args, missing input, stdin without base-dir, non-dir base-dir), `3` (no browser via `find_browser_executable` and `render_pdf`, asserting `MDTOPDF_BROWSER` message), `4` (render failures / `RuntimeError`), `5` (empty PDF: 0 pages or 0 bytes).
+    - Complete JSON schema validation on success (`ok: true`, `output`, `pages`, `embedded_images`, `suppressed_images`, `elapsed_seconds`) and on every exit code (`ok: false`, `error`, `code`).
+    - Stdin mode (`-` with default and custom `-o`, with UTF-8 BOM).
+    - Default output (`.pdf` adjacent to input) and base-dir resolution.
+    - Suppressed-image warning behavior on `stderr` preserving exit code `0` (human and JSON mode).
+    - UTF-8 with BOM file decoding and international Unicode character support.
+    - Windows paths with spaces and Unicode in input, output, and base-dir.
+    - I/O error handling, stdio reconfiguration, and module execution via `runpy`.
+  - `tests/test_e2e.py` (marked `@pytest.mark.e2e`):
+    - Real headless browser execution (Edge/Chrome/Chromium) verifying generated PDF has `>= 1` page via PyMuPDF.
+    - E2E tests for Thai Unicode + Markdown table + code block rendering.
+    - E2E tests for `--json` output schema with real browser.
+    - E2E tests for stdin `-` with real browser.
+    - E2E tests for default output path resolution.
+    - E2E tests for missing image suppression warning.
+    - Automatic graceful skip when no compatible browser is found.
+  - `tests/test_ssot_boundary.py`:
+    - Verifies zero duplication of core functions (`def render_pdf`, `def build_css`, `def _sanitize_html`, `class HtmlSanitizer`, etc.) across `src/`, `skills/`, and `tests/`.
+    - Verifies no legacy imports of Tk `app` or top-level `converter`.
+    - Verifies `src/mdtopdf_skill/cli.py` only imports from `mdtopdf_core`, `mdtopdf_skill`, or Python standard library.
+- Verified test suite passes cleanly with **100% statement coverage** on `src/mdtopdf_skill`:
+  ```
+  Name                            Stmts   Miss  Cover   Missing
+  -------------------------------------------------------------
+  src\mdtopdf_skill\__init__.py       3      0   100%
+  src\mdtopdf_skill\cli.py          209      0   100%
+  -------------------------------------------------------------
+  TOTAL                             212      0   100%
+  ```
+  Total tests: 177 passed in ~9.5s.
+- Verified `ruff check .` passes with 0 issues.
+- Verified `mypy src tests` passes with 0 issues across all 8 source files.
+- **CLI bugs found:** None. The CLI implementation adheres strictly to the §5 contract and handles all error conditions correctly.
+
+### Next Up: §8.4 Review Agent
 - [ ] **§8.4 Review Agent:** Adversarial review across SSOT, §5 contract, path-traversal/security, cross-platform behavior, `SKILL.md` prompt-injection/trigger quality, packaging, and CI; record findings in `REVIEW.md`.
