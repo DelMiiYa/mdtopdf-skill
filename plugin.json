@@ -1,0 +1,12 @@
+{
+  "name": "md-to-pdf",
+  "displayName": "Markdown to PDF",
+  "version": "0.1.0",
+  "description": "Convert Markdown documents (including Thai/Unicode text, tables, and local images) into print-ready A4 PDFs using the headless mdtopdf CLI.",
+  "repository": "https://github.com/DelMiiYa/mdtopdf-skill",
+  "suggestedPrompts": [
+    "Convert README.md to a print-ready A4 PDF",
+    "Export docs/report.md to PDF with comfortable margins and a custom accent color",
+    "Render my Thai Markdown notes to PDF and check for missing images"
+  ]
+}
