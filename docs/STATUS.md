@@ -35,9 +35,9 @@ Each role agent (§8 of `docs/HANDOFF.md`) appends its status and handoff notes 
 ### Open Tasks for §8.2 Dev Agent (from §5 CLI Contract & §7 SKILL.md Requirements)
 
 #### 1. CLI Implementation (`src/mdtopdf_skill/cli.py` per §5)
-- [ ] **SSOT Compliance (§2–§3):** Import only from `mdtopdf_core` (`render_pdf`, `ConversionOptions`, `ConversionResult`, `MARGIN_PRESETS`, `find_browser_executable`). Never import `app` or `converter`, and never duplicate conversion/CSS/sanitization logic.
-- [ ] **Testable Structure (§8.2):** Keep `main(argv: list[str] | None = None) -> int` thin with separate argument-parsing and execution helper functions.
-- [ ] **Flags & Defaults (§5):**
+- [x] **SSOT Compliance (§2–§3):** Import only from `mdtopdf_core` (`render_pdf`, `ConversionOptions`, `ConversionResult`, `MARGIN_PRESETS`, `find_browser_executable`). Never import `app` or `converter`, and never duplicate conversion/CSS/sanitization logic.
+- [x] **Testable Structure (§8.2):** Keep `main(argv: list[str] | None = None) -> int` thin with separate argument-parsing and execution helper functions.
+- [x] **Flags & Defaults (§5):**
   - `INPUT.md` positional argument (path or `-` for `stdin`).
   - `-o` / `--output OUT.pdf`: defaults to input path with `.pdf` suffix (handle `stdin` case appropriately).
   - `--base-dir DIR`: defaults to input file's parent directory; **required** when `INPUT.md` is `-` (exit `2` if missing).
@@ -53,26 +53,46 @@ Each role agent (§8 of `docs/HANDOFF.md`) appends its status and handoff notes 
   - `--json`: emit single JSON object to `stdout` on success (`{"ok":true,"output":...,"pages":...,"embedded_images":...,"suppressed_images":[...],"elapsed_seconds":...}`) and on error (`{"ok":false,"error":...,"code":...}`).
   - `--quiet`: suppress non-error human-readable output.
   - `--version`: print version and exit `0`.
-- [ ] **Encoding & Windows I/O (§5):** Read Markdown input as `utf-8-sig` (UTF-8 with BOM tolerated). Ensure `stdout`/`stderr` are UTF-8 safe on Windows (e.g. `reconfigure(encoding="utf-8", errors="replace")` where applicable).
-- [ ] **Exit Codes (§5):**
+- [x] **Encoding & Windows I/O (§5):** Read Markdown input as `utf-8-sig` (UTF-8 with BOM tolerated). Ensure `stdout`/`stderr` are UTF-8 safe on Windows (e.g. `reconfigure(encoding="utf-8", errors="replace")` where applicable).
+- [x] **Exit Codes (§5):**
   - `0`: Success (PDF exists, size > 0, `page_count >= 1`).
   - `2`: Bad CLI arguments, out-of-range/NaN/inf numbers, missing input file, or `-` without `--base-dir`.
   - `3`: No browser found (`FileNotFoundError` from core / `find_browser_executable`); error message **must mention `MDTOPDF_BROWSER`**.
   - `4`: Render failure (`RuntimeError` or unexpected conversion exception from core).
   - `5`: Output PDF missing, empty (`0` bytes), or `page_count == 0`.
-- [ ] **Suppressed Images Warning (§5–§6):** When `result.suppressed_images` is non-empty, emit a clear warning on `stderr` (and include the list in `--json` output) while still returning exit code `0`.
+- [x] **Suppressed Images Warning (§5–§6):** When `result.suppressed_images` is non-empty, emit a clear warning on `stderr` (and include the list in `--json` output) while still returning exit code `0`.
 
 #### 2. Antigravity Skill Documentation (`skills/md-to-pdf/SKILL.md` per §7)
-- [ ] Keep frontmatter `name: md-to-pdf` and `description` specifying when to use (convert/export/print Markdown to PDF, Thai/Unicode docs, local images) and when not to use (editing PDFs, DOCX, LaTeX math).
-- [ ] Document concise agent workflow:
+- [x] Keep frontmatter `name: md-to-pdf` and `description` specifying when to use (convert/export/print Markdown to PDF, Thai/Unicode docs, local images) and when not to use (editing PDFs, DOCX, LaTeX math).
+- [x] Document concise agent workflow:
   1. Check CLI availability (`mdtopdf --version`).
   2. Run conversion with `--json`.
   3. Inspect `suppressed_images` and `pages` in JSON output.
   4. Report output path (and any suppressed-image warnings) to the user.
-- [ ] Add troubleshooting table keyed by exit codes (`0`, `2`, `3`, `4`, `5`).
-- [ ] Include 2–3 copy-paste CLI examples.
-- [ ] Document known upstream limitations (§6): (A) local images outside `base_dir` dropped unless `--allow-outside-base-dir` is set; (B) LaTeX `$...$` printed raw.
+- [x] Add troubleshooting table keyed by exit codes (`0`, `2`, `3`, `4`, `5`).
+- [x] Include 2–3 copy-paste CLI examples.
+- [x] Document known upstream limitations (§6): (A) local images outside `base_dir` dropped unless `--allow-outside-base-dir` is set; (B) LaTeX `$...$` printed raw.
 
-#### 3. Subsequent Role Queues
+---
+
+## §8.2 Dev Agent – Completed
+**Date:** 2026-11-12
+
+### Completed in §8.2
+- Implemented `src/mdtopdf_skill/cli.py` strictly following the SSOT rule (§2):
+  - Imports only `MARGIN_PRESETS`, `ConversionOptions`, `ConversionResult`, `find_browser_executable`, and `render_pdf` from `mdtopdf_core`.
+  - Exposes modular, testable functions: `build_parser()`, `parse_args(argv)`, `build_conversion_options(args)`, `resolve_margin_css(raw_margin)`, `run(args)`, and `main(argv)`.
+  - Implements all §5 flags (`INPUT.md`, `-o`/`--output`, `--base-dir`, `--font-size`, `--line-height`, `--margin`, `--img-max-width`, `--img-max-height`, `--keep-missing-images`, `--no-keep-together`, `--accent`, `--title`, `--allow-outside-base-dir`, `--json`, `--quiet`, `--version`).
+  - Validates numeric inputs before calling core (`--font-size` in `[6, 72]`, `--line-height` in `[1, 3]`, `--img-max-width` / `--img-max-height` `>= 1`, rejecting `NaN`, `inf`, and `-inf`).
+  - Reads UTF-8 with BOM tolerated (`utf-8-sig`) for both file paths and `stdin` (`-`), and reconfigures Windows `stdout`/`stderr` to UTF-8.
+  - Emits warnings on `stderr` when `suppressed_images` is non-empty while preserving exit code `0`.
+  - Implements exact exit codes (`0`, `2`, `3` mentioning `MDTOPDF_BROWSER`, `4`, `5`) and `--json` output on both success and failure.
+- Completed `skills/md-to-pdf/SKILL.md` per §7 with frontmatter, 4-step `--json` workflow, prompt-injection guardrail note, 3 copy-paste CLI examples, exit-code troubleshooting table, and §6 upstream limitations.
+- Verified `plugin.json` and `README.md` match the CLI contract and Antigravity plugin specification.
+- Verified `ruff check .`, `mypy src tests`, and `pytest -v` pass cleanly in `.venv`.
+- Verified all flags and exit codes (`0`, `2`, `3`, `4`, `5`) end-to-end on a sample Thai UTF-8 BOM + local PNG image + table `.md` document.
+- **Unfinished items / blockers:** None.
+
+### Next Up: §8.3 Test Agent & §8.4 Review Agent
 - [ ] **§8.3 Test Agent:** Expand `tests/` to cover all CLI flags, validation edge cases (`NaN`/`inf`), exit codes (`0`, `2`, `3`, `4`, `5`), `--json` schema, `stdin`, UTF-8 BOM, Windows paths with spaces/Unicode, `@pytest.mark.e2e` browser tests, and SSOT guard test (no copied `def render_pdf` / `def build_css`).
 - [ ] **§8.4 Review Agent:** Adversarial review across SSOT, §5 contract, path-traversal/security, cross-platform behavior, `SKILL.md` prompt-injection/trigger quality, packaging, and CI; record findings in `REVIEW.md`.

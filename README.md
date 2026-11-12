@@ -34,7 +34,7 @@ mdtopdf INPUT.md [-o OUT.pdf] [--base-dir DIR]
 | Argument / Flag | Default | Description |
 | :--- | :--- | :--- |
 | `INPUT.md` | *(required)* | Input Markdown file path, or `-` to read UTF-8 Markdown from `stdin` (UTF-8 BOM tolerated). |
-| `-o`, `--output OUT.pdf` | `<INPUT>.pdf` | Output PDF file path. Required when `INPUT.md` is `-` unless a default is specified. |
+| `-o`, `--output OUT.pdf` | `<INPUT>.pdf` | Output PDF file path (defaults to `<base-dir>/stdin.pdf` when `INPUT.md` is `-`). |
 | `--base-dir DIR` | Input file's parent directory | Base directory used to resolve relative image paths. **Required** when reading from `stdin` (`-`). |
 
 ### Styling & Page Layout Flags
@@ -44,12 +44,12 @@ mdtopdf INPUT.md [-o OUT.pdf] [--base-dir DIR]
 | `--font-size PT` | `9.5` | `6.0` – `72.0` (finite float) | Base body font size in points. |
 | `--line-height N` | `1.45` | `1.0` – `3.0` (finite float) | Body line-height multiplier. |
 | `--margin PRESET_OR_CSS` | `standard` (`"12mm 14mm"`) | `compact`, `standard`, `comfortable`, `wide`, or a CSS margin string (e.g. `"12mm 14mm"`) | Page margin preset (case-insensitive) or raw CSS margin specification. |
-| `--img-max-width PX` | `90` | Positive integer / percentage per core contract | Maximum image width constraint passed to `ConversionOptions`. |
-| `--img-max-height PX` | `70` | Positive integer / percentage per core contract | Maximum image height constraint passed to `ConversionOptions`. |
+| `--img-max-width PX` | `90` | Positive integer (`>= 1`) | Maximum table image width in pixels passed to `ConversionOptions`. |
+| `--img-max-height PX` | `70` | Positive integer (`>= 1`) | Maximum table image height in pixels passed to `ConversionOptions`. |
 | `--keep-missing-images` | `False` (`suppress_missing_images=True`) | Flag | Do not strip missing local images before rendering. By default, missing images are suppressed and reported as warnings. |
 | `--no-keep-together` | `False` (`keep_blocks_together=True`) | Flag | Allow page breaks inside tables, code blocks, and callout blocks. |
 | `--accent "#hex"` | `"#0d47a1"` | CSS hex color | Accent color for headings, table headers, and callout borders. |
-| `--title TEXT` | Derived from input | String | Optional document title metadata. |
+| `--title TEXT` | `"Markdown Document"` | String | Optional document title metadata. |
 
 ### Security & Output Mode Flags
 
