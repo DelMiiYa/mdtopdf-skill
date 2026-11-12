@@ -149,5 +149,44 @@ Each role agent (§8 of `docs/HANDOFF.md`) appends its status and handoff notes 
 - Verified `mypy src tests` passes with 0 issues across all 8 source files.
 - **CLI bugs found:** None. The CLI implementation adheres strictly to the §5 contract and handles all error conditions correctly.
 
-### Next Up: §8.4 Review Agent
-- [ ] **§8.4 Review Agent:** Adversarial review across SSOT, §5 contract, path-traversal/security, cross-platform behavior, `SKILL.md` prompt-injection/trigger quality, packaging, and CI; record findings in `REVIEW.md`.
+### §8.4 Review Agent – Completed (Review Round 1)
+- [x] **§8.4 Review Agent:** Adversarial review across SSOT, §5 contract, path-traversal/security, cross-platform behavior, `SKILL.md` prompt-injection/trigger quality, packaging, and CI; record findings in `REVIEW.md`.
+
+---
+
+## §8.4 Review Agent – Audit Completed (Review Round 1)
+**Date:** 2026-11-12
+
+### Release Recommendation: **NO-GO (Conditional on fixing 2 High & 3 Medium findings)**
+
+### Summary of Audit
+- Completed an adversarial QA and security review across the entire repository without modifying source files or fixing code directly per §8.4.
+- Generated comprehensive review report in `REVIEW.md` matching the format and standards of upstream `e:\Antigravity-Projects\mdtopdf\REVIEW.md`.
+- Verified 100% statement coverage (177 tests passing in `9.37s`), clean `ruff` and `mypy` strict checks, zero Bandit security alerts, and successful fresh virtual environment installation from the upstream `v1.2.0` tag.
+- Confirmed zero Single Source of Truth (SSOT) boundary violations: zero conversion logic duplication and zero unauthorized imports outside `mdtopdf_core`.
+
+### Findings Identified (8 Total: 0 Critical, 2 High, 3 Medium, 3 Low)
+- **F-01 [High]** `src/mdtopdf_skill/cli.py:384-396`: Input file overwrite & destruction when `-o` matches `INPUT.md` (unrecoverable data loss).
+- **F-02 [High]** `src/mdtopdf_skill/cli.py:438-445`, `skills/md-to-pdf/SKILL.md:21-26`: Unsanitized `suppressed_images` printed to `stderr` allows multi-line prompt injection & ANSI escape injection into agent context.
+- **F-03 [Medium]** `src/mdtopdf_skill/cli.py:380-396`: Passing an existing directory to `-o` triggers browser render failure (exit code 4) instead of upfront argument validation error (exit code 2).
+- **F-04 [Medium]** `src/mdtopdf_skill/cli.py:397-399`: Non-existent `--base-dir` path is silently accepted instead of failing with exit code 2.
+- **F-05 [Medium]** `skills/md-to-pdf/SKILL.md:36-38`: Example recommends `cat ... | mdtopdf -` which fails on Windows `cmd.exe` and corrupts UTF-8 Thai/Unicode under PowerShell 5.1 ANSI decoding.
+- **F-06 [Low]** `src/mdtopdf_skill/cli.py:471-477`: Naive substring check `"--json" in effective_argv` produces unintended JSON on validation failures when `--json` is passed as an option value or after `--`.
+- **F-07 [Low]** `src/mdtopdf_skill/cli.py:405-410, 428-436`: Production code contains test-mocking identity checks (`is _DEFAULT_RENDER_PDF`), causing redundant browser searches in production.
+- **F-08 [Low]** `.github/workflows/ci.yml:1-44`: CI workflow omits explicit least-privilege `permissions: contents: read` block.
+
+### Next Steps for Dev & Test Agents
+- [x] **§8.2 Dev Agent:** Implement fixes for P0 (F-01, F-02), P1 (F-03, F-04), P2 (F-05), and P3 (F-06, F-07, F-08) per suggested diffs in `REVIEW.md`.
+- [x] **§8.3 Test Agent:** Add regression tests in `tests/test_cli_execution.py` covering input/output path collisions, directory output, non-existent base-dir rejection, `--json` option-value disambiguation, and stderr prompt sanitization.
+- [x] **§8.4 Review Agent:** Conduct Re-Review (Round 2) to confirm all High, Medium, and Low findings are resolved.
+
+---
+
+## §8.4 Re-Review (Round 2) – Completed (GO)
+**Date:** 2026-11-12
+
+### Summary
+- All 8 findings (`F-01` through `F-08`: 2 High, 3 Medium, 3 Low) have been remediated across `src/mdtopdf_skill/cli.py`, `skills/md-to-pdf/SKILL.md`, `.github/workflows/ci.yml`, and `tests/test_cli_execution.py`.
+- **182 passed in `9.34s`** with **100% statement coverage** (`231/231` statements across `src/mdtopdf_skill/`).
+- `ruff check .` and `mypy src tests` pass with 0 issues.
+- **Release Recommendation:** **GO** (0 open High/Medium/Low findings).

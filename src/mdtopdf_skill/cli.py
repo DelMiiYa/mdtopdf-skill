@@ -43,13 +43,26 @@ EXIT_NO_BROWSER = 3
 EXIT_RENDER_ERROR = 4
 EXIT_EMPTY_PDF = 5
 
-_DEFAULT_RENDER_PDF = render_pdf
-_DEFAULT_FIND_BROWSER = find_browser_executable
-
 _FONT_SIZE_MIN = 6.0
 _FONT_SIZE_MAX = 72.0
 _LINE_HEIGHT_MIN = 1.0
 _LINE_HEIGHT_MAX = 3.0
+
+_VALUE_TAKING_FLAGS: frozenset[str] = frozenset(
+    {
+        "-o",
+        "--output",
+        "--base-dir",
+        "--font-size",
+        "--line-height",
+        "--margin",
+        "--img-max-width",
+        "--img-max-height",
+        "--accent",
+        "--title",
+    }
+)
+_CONTROL_CHAR_RE = re.compile(r"[\r\n\x00-\x1f\x7f-\x9f]")
 
 # Build case-insensitive preset map directly from upstream MARGIN_PRESETS (SSOT)
 _MARGIN_PRESET_MAP: dict[str, str] = {}
@@ -342,6 +355,27 @@ def _emit_error(message: str, code: int, json_mode: bool) -> int:
     return code
 
 
+def _sanitize_for_stderr(text: str) -> str:
+    """Escape control characters and newlines before printing untrusted paths to stderr."""
+    return _CONTROL_CHAR_RE.sub(lambda m: repr(m.group(0))[1:-1], text)
+
+
+def _is_json_requested(argv: Sequence[str]) -> bool:
+    """Detect whether --json was passed as an option token (not an option value or after '--')."""
+    skip_next = False
+    for token in argv:
+        if skip_next:
+            skip_next = False
+            continue
+        if token == "--":
+            break
+        if token == "--json":
+            return True
+        if token in _VALUE_TAKING_FLAGS:
+            skip_next = True
+    return False
+
+
 def _read_markdown_input(input_arg: str) -> str:
     """Read UTF-8 Markdown (tolerating BOM) from a file path or stdin ('-')."""
     if input_arg == "-":
@@ -393,21 +427,25 @@ def run(args: argparse.Namespace) -> int:
                 if args.output is not None
                 else input_path.with_suffix(".pdf")
             )
+            if output_path.resolve() == input_path.resolve():
+                raise CliArgumentError(
+                    "Output PDF path cannot be the same file as the input file."
+                )
 
-        if base_dir_path.exists() and not base_dir_path.is_dir():
+        if not base_dir_path.exists():
+            raise CliArgumentError(f"--base-dir does not exist: {base_dir_path}")
+        if not base_dir_path.is_dir():
             raise CliArgumentError(f"--base-dir is not a directory: {base_dir_path}")
+
+        if output_path.exists() and output_path.is_dir():
+            raise CliArgumentError(f"Output path is a directory: {output_path}")
 
         options = build_conversion_options(args)
     except CliArgumentError as exc:
         return _emit_error(exc.message, exc.exit_code, json_mode)
 
     try:
-        if (
-            find_browser_executable is not _DEFAULT_FIND_BROWSER
-            or render_pdf is _DEFAULT_RENDER_PDF
-        ):
-            find_browser_executable()
-
+        find_browser_executable()
         result: ConversionResult = render_pdf(
             md_text,
             str(base_dir_path),
@@ -426,9 +464,11 @@ def run(args: argparse.Namespace) -> int:
         return _emit_error(f"PDF rendering failed: {exc}", EXIT_RENDER_ERROR, json_mode)
 
     resolved_out = Path(result.output_pdf_path) if result.output_pdf_path else output_path
-    file_empty = resolved_out.exists() and resolved_out.stat().st_size == 0
-    file_missing = render_pdf is _DEFAULT_RENDER_PDF and not resolved_out.exists()
-    if result.page_count <= 0 or file_empty or file_missing:
+    if (
+        result.page_count <= 0
+        or not resolved_out.is_file()
+        or resolved_out.stat().st_size == 0
+    ):
         return _emit_error(
             f"Output PDF is empty or has 0 pages: {resolved_out}",
             EXIT_EMPTY_PDF,
@@ -436,7 +476,8 @@ def run(args: argparse.Namespace) -> int:
         )
 
     if result.suppressed_images:
-        joined = ", ".join(result.suppressed_images)
+        sanitized = [_sanitize_for_stderr(img) for img in result.suppressed_images]
+        joined = ", ".join(sanitized)
         print(
             f"Warning: {len(result.suppressed_images)} suppressed image(s) "
             f"(missing or outside base-dir): {joined}",
@@ -468,7 +509,7 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``mdtopdf`` console script."""
     _configure_stdio_utf8()
     effective_argv = list(argv) if argv is not None else sys.argv[1:]
-    json_requested = "--json" in effective_argv
+    json_requested = _is_json_requested(effective_argv)
 
     try:
         args = parse_args(effective_argv)
