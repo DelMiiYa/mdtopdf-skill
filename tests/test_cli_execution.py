@@ -5,11 +5,14 @@ from __future__ import annotations
 import io
 import json
 import sys
+import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from mdtopdf_core import ConversionOptions, ConversionResult
+from mdtopdf_core import __version__ as core_version
 
 import mdtopdf_skill.cli as cli
 from mdtopdf_skill.cli import (
@@ -311,6 +314,8 @@ class TestJsonSchema:
             "pages",
             "embedded_images",
             "suppressed_images",
+            "warnings",
+            "core_version",
             "elapsed_seconds",
         }
         assert data["ok"] is True
@@ -318,6 +323,8 @@ class TestJsonSchema:
         assert data["pages"] == 2
         assert data["embedded_images"] == 1
         assert data["suppressed_images"] == []
+        assert data["warnings"] == []
+        assert data["core_version"] == core_version
         assert isinstance(data["elapsed_seconds"], float)
 
     def test_json_error_exit_2_bad_args(self, capsys: pytest.CaptureFixture[str]) -> None:
@@ -758,5 +765,268 @@ class TestEdgeCasesAndIoErrors:
             with pytest.raises(SystemExit) as exc_info:
                 runpy.run_module("mdtopdf_skill.cli", run_name="__main__")
         assert exc_info.value.code == 0
+
+
+class TestDefaultTitleBehavior:
+    """Verify automatic PDF title extraction from first H1 or filename."""
+
+    def test_default_title_uses_first_h1(
+        self,
+        tmp_path: Path,
+        mock_successful_render: dict[str, Any],
+    ) -> None:
+        md_file = tmp_path / "lab_notes.md"
+        md_file.write_text("# Lab 04: Signal Processing\n\nBody text.", encoding="utf-8")
+
+        code = main([str(md_file)])
+        assert code == EXIT_OK
+        assert mock_successful_render["options"].title == "Lab 04: Signal Processing"
+
+    def test_default_title_falls_back_to_filename_without_h1(
+        self,
+        tmp_path: Path,
+        mock_successful_render: dict[str, Any],
+    ) -> None:
+        md_file = tmp_path / "meeting_notes.md"
+        md_file.write_text("## Agenda\n\n- Item 1", encoding="utf-8")
+
+        code = main([str(md_file)])
+        assert code == EXIT_OK
+        assert mock_successful_render["options"].title == "meeting_notes"
+
+    def test_explicit_title_overrides_h1(
+        self,
+        tmp_path: Path,
+        mock_successful_render: dict[str, Any],
+    ) -> None:
+        md_file = tmp_path / "doc.md"
+        md_file.write_text("# Original Heading\n\nText.", encoding="utf-8")
+
+        code = main([str(md_file), "--title", "Custom Title"])
+        assert code == EXIT_OK
+        assert mock_successful_render["options"].title == "Custom Title"
+
+
+class TestOutputDirectoryWritabilityAndFallback:
+    """Verify writable output checks, CWD/temp fallback, and explicit -o exit 2."""
+
+    def test_is_directory_writable_returns_false_when_parent_is_a_file(
+        self, tmp_path: Path
+    ) -> None:
+        blocker = tmp_path / "not_a_dir"
+        blocker.write_text("x", encoding="utf-8")
+        assert cli._is_directory_writable(blocker) is False
+
+    def test_readonly_default_dir_falls_back_to_cwd(
+        self,
+        tmp_path: Path,
+        mock_successful_render: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        ro_dir = tmp_path / "uploads_ro"
+        ro_dir.mkdir()
+        md_file = ro_dir / "report.md"
+        md_file.write_text("# Report", encoding="utf-8")
+
+        cwd_dir = tmp_path / "workdir"
+        cwd_dir.mkdir()
+        monkeypatch.chdir(cwd_dir)
+        monkeypatch.setattr(
+            cli,
+            "_is_directory_writable",
+            lambda p: Path(p).resolve() != ro_dir.resolve(),
+        )
+
+        code = main([str(md_file), "--json"])
+        assert code == EXIT_OK
+
+        expected_out = str(cwd_dir / "report.pdf")
+        assert mock_successful_render["output_pdf_path"] == expected_out
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out.strip())
+        assert data["output"] == expected_out
+        assert any("output_fallback:" in w for w in data["warnings"])
+        assert "output_fallback:" in captured.err
+
+    def test_readonly_default_dir_skips_bad_cwd_and_uses_tempdir(
+        self,
+        tmp_path: Path,
+        mock_successful_render: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ro_dir = tmp_path / "uploads_ro"
+        ro_dir.mkdir()
+        md_file = ro_dir / "report.md"
+        md_file.write_text("# Report", encoding="utf-8")
+
+        cwd_dir = tmp_path / "cwd_conflict"
+        cwd_dir.mkdir()
+        (cwd_dir / "report.pdf").mkdir()  # directory collision in cwd
+
+        fallback_tmp = tmp_path / "temp_fallback"
+        fallback_tmp.mkdir()
+        monkeypatch.chdir(cwd_dir)
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(fallback_tmp))
+        monkeypatch.setattr(
+            cli,
+            "_is_directory_writable",
+            lambda p: Path(p).resolve() == fallback_tmp.resolve(),
+        )
+
+        code = main([str(md_file)])
+        assert code == EXIT_OK
+        assert mock_successful_render["output_pdf_path"] == str(fallback_tmp / "report.pdf")
+
+    def test_readonly_default_dir_skips_cwd_collision_with_input(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ro_dir = tmp_path / "uploads_ro"
+        ro_dir.mkdir()
+        cwd_dir = tmp_path / "cwd_dir"
+        cwd_dir.mkdir()
+        input_in_cwd = cwd_dir / "same_name.pdf"
+        input_in_cwd.write_text("# Colliding input", encoding="utf-8")
+
+        fallback_tmp = tmp_path / "temp_fallback"
+        fallback_tmp.mkdir()
+        monkeypatch.chdir(cwd_dir)
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(fallback_tmp))
+        monkeypatch.setattr(
+            cli,
+            "_is_directory_writable",
+            lambda p: Path(p).resolve() in {cwd_dir.resolve(), fallback_tmp.resolve()},
+        )
+
+        resolved_path, warning = cli._resolve_writable_output_path(
+            ro_dir / "same_name.pdf",
+            explicit_output=False,
+            input_path=input_in_cwd,
+        )
+        assert resolved_path == fallback_tmp / "same_name.pdf"
+        assert warning is not None and "output_fallback:" in warning
+
+    def test_non_writable_explicit_output_exits_2(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        md_file = tmp_path / "doc.md"
+        md_file.write_text("# Doc", encoding="utf-8")
+        explicit_out = tmp_path / "ro_out" / "out.pdf"
+        explicit_out.parent.mkdir()
+
+        monkeypatch.setattr(cli, "_is_directory_writable", lambda _p: False)
+        code = main([str(md_file), "-o", str(explicit_out), "--json"])
+        assert code == EXIT_BAD_ARGS
+
+        data = json.loads(capsys.readouterr().out.strip())
+        assert data["ok"] is False
+        assert data["code"] == EXIT_BAD_ARGS
+        assert "Output directory is not writable" in data["error"]
+
+    def test_no_writable_fallback_exits_2(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        md_file = tmp_path / "doc.md"
+        md_file.write_text("# Doc", encoding="utf-8")
+        monkeypatch.setattr(cli, "_is_directory_writable", lambda _p: False)
+
+        code = main([str(md_file)])
+        assert code == EXIT_BAD_ARGS
+        assert "Output directory is not writable" in capsys.readouterr().err
+
+
+class TestWarningsAndLiteralMath:
+    """Verify literal LaTeX detection and pass-through of core warnings."""
+
+    def test_literal_latex_math_emits_warning_in_json_and_stderr(
+        self,
+        tmp_path: Path,
+        mock_successful_render: dict[str, Any],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        md_file = tmp_path / "math.md"
+        md_file.write_text(
+            "# Physics\n\nStep $A \\rightarrow B$ and display:\n$$E = mc^2$$\n",
+            encoding="utf-8",
+        )
+
+        code = main([str(md_file), "--json"])
+        assert code == EXIT_OK
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out.strip())
+        assert data["warnings"] == [
+            "literal_math: 2 occurrence(s) of LaTeX math rendered as raw text"
+        ]
+        assert "Warning: literal_math: 2 occurrence(s)" in captured.err
+
+    def test_currency_code_and_empty_dollars_do_not_trigger_literal_math_warning(
+        self,
+        tmp_path: Path,
+        mock_successful_render: dict[str, Any],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        md_file = tmp_path / "currency.md"
+        md_file.write_text(
+            "# Pricing\n\n"
+            "Costs $100-$200 or $100,$200, or $50 to $80.\n"
+            "Empty $$   $$ is ignored.\n\n"
+            "Inline `$x + y$` and fenced code:\n"
+            "```tex\n$\\rightarrow$\n```\n",
+            encoding="utf-8",
+        )
+
+        code = main([str(md_file), "--json"])
+        assert code == EXIT_OK
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out.strip())
+        assert data["warnings"] == []
+        assert captured.err == ""
+
+    def test_passes_through_core_warnings_without_duplicating_literal_math(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        md_file = tmp_path / "core_warn.md"
+        md_file.write_text("# Title\n\nValue $\\alpha$", encoding="utf-8")
+        out_pdf = md_file.with_suffix(".pdf")
+
+        def _mock_render(*args: Any, **kwargs: Any) -> Any:
+            out_pdf.write_bytes(b"%PDF-1.4 simulated")
+            return SimpleNamespace(
+                output_pdf_path=str(out_pdf),
+                page_count=1,
+                embedded_images=0,
+                suppressed_images=[],
+                elapsed_seconds=0.2,
+                warnings=[
+                    "literal_math: 1 occurrence(s)",
+                    "missing_glyphs: 2 unsupported character(s)",
+                ],
+            )
+
+        monkeypatch.setattr(cli, "render_pdf", _mock_render)
+        code = main([str(md_file), "--json"])
+        assert code == EXIT_OK
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out.strip())
+        assert data["warnings"] == [
+            "literal_math: 1 occurrence(s)",
+            "missing_glyphs: 2 unsupported character(s)",
+        ]
+        assert "missing_glyphs: 2 unsupported character(s)" in captured.err
 
 

@@ -34,7 +34,7 @@ mdtopdf INPUT.md [-o OUT.pdf] [--base-dir DIR]
 | Argument / Flag | Default | Description |
 | :--- | :--- | :--- |
 | `INPUT.md` | *(required)* | Input Markdown file path, or `-` to read UTF-8 Markdown from `stdin` (UTF-8 BOM tolerated). |
-| `-o`, `--output OUT.pdf` | `<INPUT>.pdf` | Output PDF file path (defaults to `<base-dir>/stdin.pdf` when `INPUT.md` is `-`). |
+| `-o`, `--output OUT.pdf` | `<INPUT>.pdf` | Output PDF file path (defaults to `<INPUT>.pdf`, or `<base-dir>/stdin.pdf` for `-`; if the default input directory is read-only, falls back to CWD or temp dir and records an `output_fallback` warning). |
 | `--base-dir DIR` | Input file's parent directory | Base directory used to resolve relative image paths. **Required** when reading from `stdin` (`-`). |
 
 ### Styling & Page Layout Flags
@@ -49,7 +49,7 @@ mdtopdf INPUT.md [-o OUT.pdf] [--base-dir DIR]
 | `--keep-missing-images` | `False` (`suppress_missing_images=True`) | Flag | Do not strip missing local images before rendering. By default, missing images are suppressed and reported as warnings. |
 | `--no-keep-together` | `False` (`keep_blocks_together=True`) | Flag | Allow page breaks inside tables, code blocks, and callout blocks. |
 | `--accent "#hex"` | `"#0d47a1"` | CSS hex color | Accent color for headings, table headers, and callout borders. |
-| `--title TEXT` | `"Markdown Document"` | String | Optional document title metadata. |
+| `--title TEXT` | First H1 heading, else filename stem (`"stdin"` for `-`) | String | Optional document title metadata. |
 
 ### Security & Output Mode Flags
 
@@ -58,14 +58,14 @@ mdtopdf INPUT.md [-o OUT.pdf] [--base-dir DIR]
 | `--allow-outside-base-dir` | `False` | **Warning:** Disables path-traversal containment so local images outside `--base-dir` can be embedded. UNC paths and remote `file://host` URLs remain blocked by `mdtopdf_core`. |
 | `--json` | `False` | Emit a single-line JSON result object to `stdout` on both success and error. |
 | `--quiet` | `False` | Suppress non-error human-readable status output. |
-| `--version` | — | Print `mdtopdf-skill` version and exit. |
+| `--version` | — | Print `mdtopdf-skill <version> (mdtopdf_core <version>)` and exit. |
 
 ### Exit Codes
 
 | Exit Code | Meaning | Notes |
 | :--- | :--- | :--- |
-| `0` | Success | PDF rendered with ≥ 1 page. Suppressed images emit a warning on `stderr` (and populate `suppressed_images` in `--json`) but still exit `0`. |
-| `2` | Bad arguments or missing input | Invalid flag values (NaN/inf, out-of-range numbers), missing input file, or `-` without `--base-dir`. |
+| `0` | Success | PDF rendered with ≥ 1 page. Suppressed images and warnings (`literal_math`, `output_fallback`) emit on `stderr` and populate `suppressed_images` / `warnings` in `--json` while still exiting `0`. |
+| `2` | Bad arguments or missing input | Invalid flag values (NaN/inf, out-of-range numbers), missing input file, `-` without `--base-dir`, or explicit `-o` targeting a non-writable directory. |
 | `3` | No browser found | Edge/Chrome/Chromium not detected. Set `MDTOPDF_BROWSER=/path/to/browser` to override. |
 | `4` | Render failure | Headless browser or conversion runtime error (`RuntimeError` from `mdtopdf_core`). |
 | `5` | Empty output PDF | Output PDF file is missing, empty (0 bytes), or has `0` pages. |
@@ -74,7 +74,7 @@ mdtopdf INPUT.md [-o OUT.pdf] [--base-dir DIR]
 
 - **Success (`exit 0`):**
   ```json
-  {"ok": true, "output": "path/to/out.pdf", "pages": 3, "embedded_images": 2, "suppressed_images": [], "elapsed_seconds": 0.84}
+  {"ok": true, "output": "path/to/out.pdf", "pages": 3, "embedded_images": 2, "suppressed_images": [], "warnings": [], "core_version": "1.2.0", "elapsed_seconds": 0.84}
   ```
 - **Failure (`exit 2..5`):**
   ```json
@@ -84,7 +84,7 @@ mdtopdf INPUT.md [-o OUT.pdf] [--base-dir DIR]
 ## Known Upstream Limitations
 
 1. **External local images dropped by default:** Absolute `file:///` or relative `../` image paths resolving outside `--base-dir` are suppressed unless `--allow-outside-base-dir` is explicitly passed.
-2. **Raw LaTeX math:** Inline `$...$` and display `$$...$$` LaTeX expressions are rendered verbatim as plain text.
+2. **Raw LaTeX math:** Inline `$...$` and display `$$...$$` LaTeX expressions are rendered verbatim as plain text and surfaced in `warnings` (`literal_math`).
 
 ## Bumping the Upstream `mdtopdf_core` Pin
 

@@ -1,7 +1,7 @@
 {
   "name": "md-to-pdf",
   "displayName": "Markdown to PDF",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Convert Markdown documents (including Thai/Unicode text, tables, and local images) into print-ready A4 PDFs using the headless mdtopdf CLI.",
   "repository": "https://github.com/DelMiiYa/mdtopdf-skill",
   "suggestedPrompts": [

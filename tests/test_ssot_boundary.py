@@ -103,6 +103,7 @@ class TestSsotBoundary:
             "math",
             "re",
             "sys",
+            "tempfile",
             "collections",
             "pathlib",
             "typing",

@@ -6,6 +6,7 @@ import math
 
 import pytest
 from mdtopdf_core import MARGIN_PRESETS, ConversionOptions
+from mdtopdf_core import __version__ as core_version
 
 from mdtopdf_skill import __version__
 from mdtopdf_skill.cli import (
@@ -13,6 +14,7 @@ from mdtopdf_skill.cli import (
     build_conversion_options,
     main,
     parse_args,
+    resolve_default_title,
     resolve_margin_css,
 )
 
@@ -370,8 +372,15 @@ class TestBooleanFlagsAndOptions:
         assert options.suppress_missing_images is True
         assert options.keep_blocks_together is True
         assert options.accent_color == "#0d47a1"
-        assert options.title == "Markdown Document"
+        assert options.title == "doc"
         assert options.allow_outside_base_dir is False
+
+        h1_options = build_conversion_options(args, md_text="# Heading Title\n\nBody")
+        assert h1_options.title == "Heading Title"
+
+        stdin_args = parse_args(["-", "--base-dir", "C:/some/path"])
+        stdin_options = build_conversion_options(stdin_args, md_text="No heading here")
+        assert stdin_options.title == "stdin"
 
 
 class TestStdinArgRequirements:
@@ -395,6 +404,34 @@ class TestStdinArgRequirements:
         assert args.base_dir == "C:/some/path"
 
 
+class TestResolveDefaultTitle:
+    """Verify default title extraction from H1 headings and filename fallbacks."""
+
+    def test_extracts_first_h1_ignoring_fenced_code_and_bom(self) -> None:
+        md = (
+            "\ufeff```python\n"
+            "# Not a title inside code\n"
+            "```\n\n"
+            "~~~bash\n"
+            "# Also in tilde fence\n"
+            "~~~\n\n"
+            "# **สรุปผล** [Lab 1](https://example.com) `v2` ###\n"
+            "# Second Heading\n"
+        )
+        assert resolve_default_title(md, "notes/lab1.md") == "สรุปผล Lab 1 v2"
+
+    def test_falls_back_to_filename_stem_when_no_h1(self) -> None:
+        md = "## Only H2\n\nSome paragraph."
+        assert resolve_default_title(md, "reports/quarterly_summary.md") == "quarterly_summary"
+
+    def test_falls_back_to_filename_when_h1_strips_to_empty(self) -> None:
+        md = "# ![](img.png)\n\nParagraph."
+        assert resolve_default_title(md, "notes/chart_only.md") == "chart_only"
+
+    def test_falls_back_to_stdin_when_input_is_dash(self) -> None:
+        assert resolve_default_title("Plain text without H1.", "-") == "stdin"
+
+
 class TestVersionAndHelp:
     """Verify --version and --help invocations via main()."""
 
@@ -402,7 +439,8 @@ class TestVersionAndHelp:
         code = main(["--version"])
         assert code == 0
         captured = capsys.readouterr()
-        assert f"mdtopdf {__version__}" in captured.out or f"mdtopdf {__version__}" in captured.err
+        expected = f"mdtopdf-skill {__version__} (mdtopdf_core {core_version})"
+        assert expected in captured.out or expected in captured.err
 
     def test_help_prints_and_exits_0(self, capsys: pytest.CaptureFixture[str]) -> None:
         code = main(["--help"])

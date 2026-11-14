@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mdtopdf-skill"
-version = "0.1.0"
+version = "0.2.0"
 description = "Headless CLI and Antigravity skill for converting Markdown to print-ready A4 PDF via mdtopdf_core."
 readme = "README.md"
 requires-python = ">=3.10"

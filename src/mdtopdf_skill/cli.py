@@ -8,6 +8,7 @@ import json
 import math
 import re
 import sys
+import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 from typing import NoReturn
@@ -18,6 +19,9 @@ from mdtopdf_core import (
     ConversionResult,
     find_browser_executable,
     render_pdf,
+)
+from mdtopdf_core import (
+    __version__ as _core_version,
 )
 
 from mdtopdf_skill import __version__
@@ -33,6 +37,7 @@ __all__ = [
     "build_parser",
     "main",
     "parse_args",
+    "resolve_default_title",
     "resolve_margin_css",
     "run",
 ]
@@ -63,6 +68,20 @@ _VALUE_TAKING_FLAGS: frozenset[str] = frozenset(
     }
 )
 _CONTROL_CHAR_RE = re.compile(r"[\r\n\x00-\x1f\x7f-\x9f]")
+_FENCED_CODE_RE = re.compile(
+    r"^[ \t]{0,3}(`{3,}|~{3,})[\s\S]*?^[ \t]{0,3}\1[ \t]*$",
+    flags=re.MULTILINE,
+)
+_ATX_H1_RE = re.compile(
+    r"^[ \t]{0,3}#[ \t]+(.+?)(?:[ \t]+#+[ \t]*)?$",
+    flags=re.MULTILINE,
+)
+_INLINE_CODE_RE = re.compile(r"(`+)(?:(?!\1)[^\n])+\1")
+_MATH_SPAN_RE = re.compile(
+    r"(?<!\\)\$\$([\s\S]+?)(?<!\\)\$\$"
+    r"|(?<!\\)(?<!\$)\$(?!\$)(?!\s)([^$\n]+?)(?<!\s)(?<!\\)\$(?!\$)"
+)
+_CURRENCY_NUM_RE = re.compile(r"^\d[\d,.\s]*-?$")
 
 # Build case-insensitive preset map directly from upstream MARGIN_PRESETS (SSOT)
 _MARGIN_PRESET_MAP: dict[str, str] = {}
@@ -274,7 +293,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--title",
         metavar="TEXT",
         default=None,
-        help="Optional document title metadata.",
+        help="Optional document title metadata (defaults to first H1, then filename).",
     )
     parser.add_argument(
         "--allow-outside-base-dir",
@@ -301,7 +320,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version",
         action="version",
-        version=f"%(prog)s {__version__}",
+        version=f"mdtopdf-skill {__version__} (mdtopdf_core {_core_version})",
     )
     return parser
 
@@ -328,9 +347,35 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return args
 
 
-def build_conversion_options(args: argparse.Namespace) -> ConversionOptions:
+def resolve_default_title(md_text: str, input_arg: str) -> str:
+    """Resolve document title from first ATX H1 outside fenced code blocks, or filename."""
+    cleaned = md_text.lstrip("\ufeff")
+    without_fences = _FENCED_CODE_RE.sub("", cleaned)
+    match = _ATX_H1_RE.search(without_fences)
+    if match:
+        text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", match.group(1))
+        text = re.sub(r"<[^>]+>", "", text)
+        text = re.sub(r"(\*\*|__|`)(.+?)\1", r"\2", text)
+        text = re.sub(r"(?<!\w)(\*|_)(.+?)\1(?!\w)", r"\2", text)
+        text = text.replace("`", "").strip()
+        if text:
+            return text
+
+    if input_arg != "-":
+        input_path = Path(input_arg)
+        return input_path.stem or input_path.name
+    return "stdin"
+
+
+def build_conversion_options(
+    args: argparse.Namespace, md_text: str = ""
+) -> ConversionOptions:
     """Build a mdtopdf_core.ConversionOptions instance from validated CLI arguments."""
-    defaults = ConversionOptions()
+    title = (
+        str(args.title)
+        if args.title is not None
+        else resolve_default_title(md_text, str(getattr(args, "input", "-")))
+    )
     return ConversionOptions(
         font_size_pt=float(args.font_size),
         line_height=float(args.line_height),
@@ -340,7 +385,7 @@ def build_conversion_options(args: argparse.Namespace) -> ConversionOptions:
         suppress_missing_images=not bool(args.keep_missing_images),
         keep_blocks_together=not bool(args.no_keep_together),
         accent_color=str(args.accent),
-        title=str(args.title) if args.title is not None else defaults.title,
+        title=title,
         allow_outside_base_dir=bool(args.allow_outside_base_dir),
     )
 
@@ -400,6 +445,64 @@ def _read_markdown_input(input_arg: str) -> str:
         raise CliArgumentError(f"Failed to read input file {input_arg!r}: {exc}") from exc
 
 
+def _is_directory_writable(dir_path: Path) -> bool:
+    """Return True if dir_path exists or can be created and accepts new files."""
+    try:
+        dir_path.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            dir=dir_path, prefix=".mdtopdf_write_probe_", delete=True
+        ):
+            return True
+    except OSError:
+        return False
+
+
+def _resolve_writable_output_path(
+    desired_output: Path,
+    explicit_output: bool,
+    input_path: Path | None,
+) -> tuple[Path, str | None]:
+    """Ensure output directory is writable, falling back to cwd or tempdir for default paths."""
+    if _is_directory_writable(desired_output.parent):
+        return desired_output, None
+
+    if explicit_output:
+        raise CliArgumentError(f"Output directory is not writable: {desired_output.parent}")
+
+    for candidate_dir in (Path.cwd(), Path(tempfile.gettempdir())):
+        candidate = candidate_dir / desired_output.name
+        if candidate.exists() and candidate.is_dir():
+            continue
+        if input_path is not None and candidate.resolve() == input_path.resolve():
+            continue
+        if _is_directory_writable(candidate.parent):
+            warning = (
+                f"output_fallback: default output directory '{desired_output.parent}' "
+                f"is not writable; wrote PDF to '{candidate}'"
+            )
+            return candidate, warning
+
+    raise CliArgumentError(f"Output directory is not writable: {desired_output.parent}")
+
+
+def _detect_literal_math_warning(md_text: str) -> str | None:
+    """Detect literal LaTeX math spans outside code blocks/spans and warn the caller."""
+    without_fences = _FENCED_CODE_RE.sub("", md_text.lstrip("\ufeff"))
+    without_code = _INLINE_CODE_RE.sub("", without_fences)
+    count = 0
+    for match in _MATH_SPAN_RE.finditer(without_code):
+        is_display = match.group(1) is not None
+        inner = match.group(1) if is_display else match.group(2)
+        if not inner or not inner.strip():
+            continue
+        if not is_display and _CURRENCY_NUM_RE.match(inner.strip()):
+            continue
+        count += 1
+    if count > 0:
+        return f"literal_math: {count} occurrence(s) of LaTeX math rendered as raw text"
+    return None
+
+
 def run(args: argparse.Namespace) -> int:
     """Execute the conversion workflow from validated CLI arguments."""
     json_mode = bool(getattr(args, "json", False))
@@ -407,6 +510,7 @@ def run(args: argparse.Namespace) -> int:
 
     try:
         md_text = _read_markdown_input(str(args.input))
+        input_path: Path | None = None
 
         if args.input == "-":
             base_dir_path = Path(str(args.base_dir))
@@ -440,7 +544,12 @@ def run(args: argparse.Namespace) -> int:
         if output_path.exists() and output_path.is_dir():
             raise CliArgumentError(f"Output path is a directory: {output_path}")
 
-        options = build_conversion_options(args)
+        output_path, fallback_warning = _resolve_writable_output_path(
+            output_path,
+            explicit_output=args.output is not None,
+            input_path=input_path,
+        )
+        options = build_conversion_options(args, md_text=md_text)
     except CliArgumentError as exc:
         return _emit_error(exc.message, exc.exit_code, json_mode)
 
@@ -475,6 +584,16 @@ def run(args: argparse.Namespace) -> int:
             json_mode,
         )
 
+    warnings: list[str] = []
+    if fallback_warning is not None:
+        warnings.append(fallback_warning)
+    core_warnings = [str(w) for w in getattr(result, "warnings", [])]
+    warnings.extend(core_warnings)
+    if not any(w.startswith("literal_math") for w in warnings):
+        math_warning = _detect_literal_math_warning(md_text)
+        if math_warning is not None:
+            warnings.append(math_warning)
+
     if result.suppressed_images:
         sanitized = [_sanitize_for_stderr(img) for img in result.suppressed_images]
         joined = ", ".join(sanitized)
@@ -484,6 +603,10 @@ def run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    if warnings:
+        sanitized_warnings = [_sanitize_for_stderr(w) for w in warnings]
+        print(f"Warning: {'; '.join(sanitized_warnings)}", file=sys.stderr)
+
     if json_mode:
         payload = {
             "ok": True,
@@ -491,6 +614,8 @@ def run(args: argparse.Namespace) -> int:
             "pages": int(result.page_count),
             "embedded_images": int(result.embedded_images),
             "suppressed_images": list(result.suppressed_images),
+            "warnings": warnings,
+            "core_version": str(_core_version),
             "elapsed_seconds": round(float(result.elapsed_seconds), 4),
         }
         print(json.dumps(payload, ensure_ascii=False), file=sys.stdout)

@@ -190,3 +190,28 @@ Each role agent (§8 of `docs/HANDOFF.md`) appends its status and handoff notes 
 - **182 passed in `9.34s`** with **100% statement coverage** (`231/231` statements across `src/mdtopdf_skill/`).
 - `ruff check .` and `mypy src tests` pass with 0 issues.
 - **Release Recommendation:** **GO** (0 open High/Medium/Low findings).
+
+---
+
+## v0.2.0 Real-Run Improvements (`handoff-mdtopdf-skill.md`) – Completed
+**Date:** 2026-11-14
+
+### Completed Changes
+1. **Skill Fast Path & Input File Rule (`skills/md-to-pdf/SKILL.md`):**
+   - Added a `## Fast Path` section at the top with `mdtopdf "INPUT.md" --json`, the 5 most-used flags (`-o`, `--margin`, `--font-size`, `--accent`, `--title`), and explicit instructions not to run `--version`/`--help` or read `README.md`/`mdtopdf_core` source before converting.
+   - Added `## Input File Rule` requiring conversion of the exact user file path as given without rewriting, summarizing, or regenerating content.
+   - Removed the redundant `--version` pre-check workflow step and added `"127 / command not found"` plus read-only output fallback guidance to troubleshooting.
+2. **Version Reporting (`src/mdtopdf_skill/cli.py`, `pyproject.toml`, `plugin.json`):**
+   - Bumped `mdtopdf-skill` to `0.2.0`.
+   - `mdtopdf --version` now prints `mdtopdf-skill 0.2.0 (mdtopdf_core <version>)`.
+   - `--json` output now includes `"core_version"`.
+3. **Default Title Extraction (`src/mdtopdf_skill/cli.py`):**
+   - Default `--title` now extracts the first ATX H1 heading outside fenced code blocks (stripping inline Markdown/HTML formatting), falling back to the input filename stem (or `"stdin"` when reading from `-`).
+4. **Read-Only Output Directory Fallback (`src/mdtopdf_skill/cli.py`):**
+   - Default output paths in read-only directories now fall back to CWD or system temp dir and emit an `output_fallback` warning in `warnings` / `stderr`. Explicit `-o` into a non-writable directory exits with code `2`.
+5. **Warnings & Literal LaTeX Surfacing (`src/mdtopdf_skill/cli.py`):**
+   - `--json` output now includes `"warnings": [...]` (passing through any upstream `ConversionResult.warnings` and detecting literal `$...$` / `$$...$$` math outside code spans/blocks while ignoring plain currency and empty dollar spans). Non-empty warnings are also emitted to `stderr`.
+6. **Verification:**
+   - `ruff check .`: 0 errors.
+   - `mypy src tests`: 0 issues across 8 source files.
+   - `pytest -v --cov=mdtopdf_skill --cov-report=term-missing`: **198 passed in `8.42s`** with **100% statement coverage** (`305/305` statements).
