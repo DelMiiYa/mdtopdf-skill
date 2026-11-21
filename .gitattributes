@@ -1,0 +1,12 @@
+* text=auto eol=lf
+*.woff2 binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+src/mdtopdf_skill/assets/mermaid.min.js binary
+src/mdtopdf_skill/assets/katex/katex.min.js binary
+src/mdtopdf_skill/assets/katex/katex.min.css binary

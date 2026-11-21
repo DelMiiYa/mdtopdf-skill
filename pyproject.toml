@@ -4,13 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mdtopdf-skill"
-version = "0.2.0"
-description = "Headless CLI and Antigravity skill for converting Markdown to print-ready A4 PDF via mdtopdf_core."
+version = "1.0.0"
+description = "Standalone headless CLI and Antigravity skill for converting Markdown to print-ready PDFs."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 dependencies = [
-    "markdown2pdf @ git+https://github.com/DelMiiYa/Markdown2PDF.git@v1.2.0",
+    "markdown>=3.6,<4.0",
+    "pymupdf>=1.24,<2.0",
+    "pillow>=10.0,<14.0",
+    "pyyaml>=6.0,<7.0",
+    "pygments>=2.17,<3.0",
 ]
 
 [project.optional-dependencies]
@@ -19,6 +23,7 @@ dev = [
     "pytest-cov>=5.0,<8.0",
     "ruff>=0.5,<1.0",
     "mypy>=1.10,<3.0",
+    "bandit>=1.7,<2.0",
 ]
 
 [project.scripts]
@@ -26,6 +31,9 @@ mdtopdf = "mdtopdf_skill.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+mdtopdf_skill = ["assets/*", "assets/katex/*", "assets/katex/fonts/*.woff2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,6 +1,108 @@
-"""Headless CLI wrapper for mdtopdf_core."""
+"""Standalone Markdown-to-PDF conversion engine and CLI for mdtopdf-skill."""
 
 from __future__ import annotations
 
-__all__ = ["__version__"]
-__version__ = "0.2.0"
+from mdtopdf_skill.autofit import inspect_pdf_pages, run_autofit_render
+from mdtopdf_skill.cdp_browser import (
+    CdpError,
+    CdpProtocolError,
+    CdpSession,
+    CdpTimeoutError,
+    find_browser_executable,
+)
+from mdtopdf_skill.frontmatter import parse_frontmatter
+from mdtopdf_skill.markdown_pipeline import BuiltDocument, build_html_document
+from mdtopdf_skill.models import (
+    DEFAULT_LANG,
+    DEFAULT_THEME,
+    EXIT_BAD_ARGS,
+    EXIT_EMPTY_PDF,
+    EXIT_NO_BROWSER,
+    EXIT_OK,
+    EXIT_RENDER_ERROR,
+    EXIT_STRICT_ISSUE,
+    MARGIN_PRESETS,
+    PAGE_SIZE_PRESETS,
+    THEME_NAMES,
+    AdjustmentRecord,
+    AutoFitOutcome,
+    ConversionOptions,
+    ConversionResult,
+    FrontmatterData,
+    LayoutIssue,
+    MathError,
+    MermaidError,
+    PageGeometry,
+    PdfInspection,
+    ThemeSpec,
+    compute_page_geometry,
+    parse_margin_mm,
+    parse_page_size_mm,
+    resolve_effective_options,
+    resolve_margin_css,
+    resolve_page_size,
+    validate_accent_color,
+)
+from mdtopdf_skill.renderer import render_pdf
+from mdtopdf_skill.sanitizer import resolve_local_image, sanitize_css, sanitize_html
+from mdtopdf_skill.themes import (
+    THEMES,
+    build_header_footer_templates,
+    build_metadata_header_html,
+    build_theme_css,
+    get_theme,
+)
+
+__version__ = "1.0.0"
+
+__all__ = [
+    "AdjustmentRecord",
+    "AutoFitOutcome",
+    "BuiltDocument",
+    "CdpError",
+    "CdpProtocolError",
+    "CdpSession",
+    "CdpTimeoutError",
+    "ConversionOptions",
+    "ConversionResult",
+    "DEFAULT_LANG",
+    "DEFAULT_THEME",
+    "EXIT_BAD_ARGS",
+    "EXIT_EMPTY_PDF",
+    "EXIT_NO_BROWSER",
+    "EXIT_OK",
+    "EXIT_RENDER_ERROR",
+    "EXIT_STRICT_ISSUE",
+    "FrontmatterData",
+    "LayoutIssue",
+    "MARGIN_PRESETS",
+    "MathError",
+    "MermaidError",
+    "PAGE_SIZE_PRESETS",
+    "PageGeometry",
+    "PdfInspection",
+    "THEMES",
+    "THEME_NAMES",
+    "ThemeSpec",
+    "__version__",
+    "build_header_footer_templates",
+    "build_html_document",
+    "build_metadata_header_html",
+    "build_theme_css",
+    "compute_page_geometry",
+    "find_browser_executable",
+    "get_theme",
+    "inspect_pdf_pages",
+    "parse_frontmatter",
+    "parse_margin_mm",
+    "parse_page_size_mm",
+    "render_pdf",
+    "resolve_effective_options",
+    "resolve_local_image",
+    "resolve_margin_css",
+    "resolve_page_size",
+    "run_autofit_render",
+    "sanitize_css",
+    "sanitize_html",
+    "validate_accent_color",
+]
