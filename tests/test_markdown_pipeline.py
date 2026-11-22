@@ -178,6 +178,21 @@ class TestMaskingMermaidMathAndCollisions:
         assert 'class="math-inline"' in doc.html
         assert "<code>inline</code>" in doc.html
 
+    def test_tight_pure_number_inline_math_vs_currency_prose(self, tmp_path: Path) -> None:
+        md = (
+            "Measured $20.17$ and integer $42$ and ($20.17$) and $42$!\n\n"
+            "Costs $5 and $10 or $1,234.50, $5 - $10, $5-$10, and $500. Next $x$ plus $10 20$.\n"
+        )
+        doc = _build(md, tmp_path)
+        assert doc.has_math is True
+        assert doc.warnings == []
+        assert doc.html.count('class="math-inline"') == 5
+        assert ">20.17</span>" in doc.html
+        assert ">42</span>" in doc.html
+        assert ">x</span>" in doc.html
+        assert "Costs $5 and $10 or $1,234.50, $5 - $10, $5-$10, and $500." in doc.html
+        assert "$10 20$" in doc.html
+
 
 class TestMarkdownExtensionsAndTransforms:
     """Verify extensions, GH alerts, task lists, H1 dedup, TOC, and station-block."""

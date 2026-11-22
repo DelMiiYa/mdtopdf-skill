@@ -206,3 +206,36 @@ class TestCliEndToEnd:
             adj["step"].startswith(("spacing_compact", "font_spacing_compact"))
             for adj in fit_data["adjustments_applied"]
         )
+
+    def test_e2e_tight_pure_number_math_rendered_and_currency_literal(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _require_browser()
+
+        md_file = tmp_path / "pure_number_math.md"
+        out_pdf = tmp_path / "pure_number_math.pdf"
+        md_file.write_text(
+            "# Numeric Math vs Currency\n\n"
+            "Tight math spans $20.17$ and $42$ render via KaTeX.\n\n"
+            "Currency prose $5 and $10, $1,234.50, $5 - $10, and $5-$10 stays literal.\n",
+            encoding="utf-8",
+        )
+
+        code = main([str(md_file), "-o", str(out_pdf), "--strict", "--json"])
+        assert code == EXIT_OK
+        data = json.loads(capsys.readouterr().out.strip())
+        assert data["math_errors"] == []
+        assert data["warnings"] == []
+        assert data["layout_issues"] == []
+
+        with pymupdf.open(str(out_pdf)) as doc:  # type: ignore[no-untyped-call]
+            full_text = "\n".join(str(p.get_text("text")) for p in doc)
+
+        assert "20.17" in full_text
+        assert "42" in full_text
+        assert "$20.17$" not in full_text
+        assert "$42$" not in full_text
+        assert "$5 and $10" in full_text
+        assert "$1,234.50" in full_text
+        assert "$5 - $10" in full_text
+        assert "$5-$10" in full_text

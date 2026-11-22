@@ -43,9 +43,11 @@ _TABLE_SEP_ROW_RE = re.compile(
     r"|^[ \t]*\|?\s*:?-{3,}:?\s*\|[ \t]*$",
     flags=re.MULTILINE,
 )
-_CURRENCY_START_RE = re.compile(r"^\d[\d,]*(?:\.\d+)?(?=$|[\s,;!?)\]}]|-(?=\s))")
+_CURRENCY_START_RE = re.compile(
+    r"^\d[\d,]*(?:\.\d+)?(?=$|[\s,;!?)\]}]|(?:\.(?=$|[\s,;!?)\]}]))|-(?=\s|\$))"
+)
 _DIGIT_MATH_OP_RE = re.compile(r"^\d[\d,]*(?:\.\d+)?\s*(?:[+*/=<>^_\\]|-(?!\s*\$))")
-_PURE_CURRENCY_INNER_RE = re.compile(r"^\d[\d,.\s]*$")
+_SPACED_CURRENCY_INNER_RE = re.compile(r"^\d[\d,.\s]*\s[\d,.\s]*$")
 
 _BQ_CONSECUTIVE_RE = re.compile(
     r"^([ \t]*>[^\n]*\n)(?:[ \t]*\n)+(?=[ \t]*>)",
@@ -661,7 +663,10 @@ def _mask_math_spans(
 
                 if close_pos != -1:
                     inner = after_display[i + 1 : close_pos]
-                    if inner.strip() and _PURE_CURRENCY_INNER_RE.fullmatch(inner.strip()) is None:
+                    if (
+                        inner.strip()
+                        and _SPACED_CURRENCY_INNER_RE.fullmatch(inner.strip()) is None
+                    ):
                         idx = len(math_spans)
                         math_spans.append((inner, False))
                         out_inline.append(f"{math_prefix}{idx}END")
