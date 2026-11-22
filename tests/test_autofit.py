@@ -223,8 +223,37 @@ class TestInspectPdfPages:
         insp = inspect_pdf_pages(pdf, 42.5, 42.5)
         assert insp.page_count == 2
         assert insp.body_line_count == 12
-        assert insp.last_page_fill_ratio > 0.08
+        assert insp.last_page_fill_ratio > 0.15
         assert insp.is_trailing_orphan is False
+
+    def test_multipage_five_lines_or_eleven_percent_fill_is_orphan(self) -> None:
+        texts = [(50, 62 + i * 14, f"Trailing line {i}") for i in range(5)]
+        pdf = _make_pdf_bytes(
+            [
+                {"texts": [(50, 100, "Page 1")]},
+                {"texts": texts},
+            ]
+        )
+        insp = inspect_pdf_pages(pdf, 42.5, 42.5)
+        assert insp.page_count == 2
+        assert insp.body_line_count == 5
+        assert 0.08 <= insp.last_page_fill_ratio < 0.15
+        assert insp.is_trailing_orphan is True
+
+    def test_multipage_seven_lines_low_fill_vs_above_threshold(self) -> None:
+        tight_texts = [(50, 56 + i * 10, f"Tight line {i}") for i in range(7)]
+        tight_pdf = _make_pdf_bytes([{"texts": [(50, 100, "P1")]}, {"texts": tight_texts}])
+        tight_insp = inspect_pdf_pages(tight_pdf, 42.5, 42.5)
+        assert tight_insp.body_line_count == 7
+        assert tight_insp.last_page_fill_ratio < 0.15
+        assert tight_insp.is_trailing_orphan is True
+
+        spaced_texts = [(50, 70 + i * 22, f"Spaced line {i}") for i in range(7)]
+        spaced_pdf = _make_pdf_bytes([{"texts": [(50, 100, "P1")]}, {"texts": spaced_texts}])
+        spaced_insp = inspect_pdf_pages(spaced_pdf, 42.5, 42.5)
+        assert spaced_insp.body_line_count == 7
+        assert spaced_insp.last_page_fill_ratio >= 0.15
+        assert spaced_insp.is_trailing_orphan is False
 
     def test_degenerate_huge_margins_fallback_to_full_page(self) -> None:
         pdf = _make_pdf_bytes([{"texts": [(50, 100, "Body")]}])
@@ -471,6 +500,31 @@ class TestRunAutofitRender:
             geom,
         )
         assert [a.step for a in outcome.adjustments_applied] == ["font_spacing_compact_2"]
+
+    def test_orphan_remediation_triggers_on_five_line_eleven_percent_page(self) -> None:
+        five_line_orphan = _make_pdf_bytes(
+            [
+                {"texts": [(50, 100, "Page 1")]},
+                {"texts": [(50, 62 + i * 14, f"Sparse trailing {i}") for i in range(5)]},
+            ]
+        )
+        one_page_fit = _make_pdf_bytes([{"texts": [(50, 100, "Compacted onto page 1")]}])
+        session = _FakeCdpSession(
+            initial_report={"table_overflows": [], "wide_elements": []},
+            inspect_reports=[{"table_overflows": [], "wide_elements": []}],
+            pdf_sequence=[five_line_orphan, one_page_fit],
+        )
+        geom = compute_page_geometry("A4 portrait", "12mm 14mm")
+        outcome = run_autofit_render(
+            session,  # type: ignore[arg-type]
+            BuiltDocument(html="<html></html>"),
+            ConversionOptions(),
+            (False, "", ""),
+            geom,
+        )
+        assert outcome.page_count == 1
+        assert outcome.layout_issues == []
+        assert [a.step for a in outcome.adjustments_applied] == ["spacing_compact_1"]
 
 
 class TestRendererModule:

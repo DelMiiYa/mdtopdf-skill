@@ -160,7 +160,7 @@ def inspect_pdf_pages(
         page_count > 1
         and body_images == 0
         and body_vector_diagrams == 0
-        and (body_line_count <= 3 or fill_ratio < 0.08)
+        and (body_line_count <= 6 or fill_ratio < 0.15)
     )
 
     return PdfInspection(

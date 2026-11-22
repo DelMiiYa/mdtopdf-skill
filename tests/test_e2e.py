@@ -161,3 +161,48 @@ class TestCliEndToEnd:
         assert "2. Item containing display math" in full_text
         assert "3. Final ordered item" in full_text
         assert "10. Double-digit item" in full_text
+
+    def test_e2e_sparse_trailing_page_9_to_14_percent_flagged_and_compacted(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _require_browser()
+
+        calibrated_md: Path | None = None
+        calibrated_fill = 0.0
+        for count in range(44, 68):
+            candidate = tmp_path / f"sparse_{count}.md"
+            probe_pdf = tmp_path / f"sparse_{count}_probe.pdf"
+            paragraphs = "\n\n".join(
+                f"Paragraph {i}: Dense technical prose line used to calibrate trailing page fill."
+                for i in range(1, count + 1)
+            )
+            candidate.write_text(f"# Sparse Calibration\n\n{paragraphs}\n", encoding="utf-8")
+            code = main(
+                [str(candidate), "-o", str(probe_pdf), "--no-auto-fit", "--json"]
+            )
+            assert code == EXIT_OK
+            probe = json.loads(capsys.readouterr().out.strip())
+            if probe["pages"] == 2 and 0.08 <= probe["last_page_fill_ratio"] < 0.15:
+                assert any(
+                    issue["kind"] == "trailing_orphan_page" for issue in probe["layout_issues"]
+                )
+                calibrated_md = candidate
+                calibrated_fill = float(probe["last_page_fill_ratio"])
+                break
+
+        assert calibrated_md is not None, (
+            f"Could not calibrate a 2-page trailing page in [0.08, 0.15) (last={calibrated_fill})"
+        )
+
+        compacted_pdf = tmp_path / "sparse_compacted.pdf"
+        code_fit = main(
+            [str(calibrated_md), "-o", str(compacted_pdf), "--strict", "--json"]
+        )
+        assert code_fit == EXIT_OK
+        fit_data = json.loads(capsys.readouterr().out.strip())
+        assert fit_data["pages"] == 1
+        assert fit_data["layout_issues"] == []
+        assert any(
+            adj["step"].startswith(("spacing_compact", "font_spacing_compact"))
+            for adj in fit_data["adjustments_applied"]
+        )
