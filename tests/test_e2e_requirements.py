@@ -47,7 +47,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 ASSETS_DIR = REPO_ROOT / "src" / "mdtopdf_skill" / "assets"
 LICENSES_PATH = ASSETS_DIR / "THIRD_PARTY_LICENSES.md"
-IMPLEMENTATION_PLAN_PATH = REPO_ROOT / "handoff" / "IMPLEMENTATION_PLAN.md"
+DECISIONS_PATH = REPO_ROOT / "docs" / "DECISIONS.md"
+README_PATH = REPO_ROOT / "README.md"
 TIERS_TEST_PATH = REPO_ROOT / "tests" / "test_e2e_tiers.py"
 
 _UNIMPLEMENTED_V1_SUBMODULES = frozenset(
@@ -386,14 +387,16 @@ class TestV1CoreContracts:
 
 
 class TestBrowserDiscoveryReadiness:
-    """Verify browser discovery docs, env vars, and Phase 2+ readiness without failing early."""
+    """Verify browser discovery docs, env vars, and readiness without failing early."""
 
-    def test_implementation_plan_documents_cdp_env_vars_and_exit_3(self) -> None:
-        plan_text = IMPLEMENTATION_PLAN_PATH.read_text(encoding="utf-8")
-        assert "MDTOPDF_BROWSER" in plan_text
-        assert "MDTOPDF_TIMEOUT" in plan_text
-        assert "127.0.0.1" in plan_text
-        assert "EXIT_NO_BROWSER" in plan_text
+    def test_docs_document_cdp_env_vars_and_exit_3(self) -> None:
+        decisions_text = DECISIONS_PATH.read_text(encoding="utf-8")
+        readme_text = README_PATH.read_text(encoding="utf-8")
+        combined = f"{decisions_text}\n{readme_text}"
+        assert "MDTOPDF_BROWSER" in combined
+        assert "MDTOPDF_TIMEOUT" in combined
+        assert "127.0.0.1" in combined
+        assert "EXIT_NO_BROWSER" in combined
 
     def test_env_override_if_set_and_ci_browser_presence(self) -> None:
         env_browser = os.environ.get("MDTOPDF_BROWSER")
