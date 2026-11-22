@@ -1,4 +1,4 @@
-"""Smoke tests verifying standalone v1.0.0 package exports and decoupling."""
+"""Smoke tests verifying standalone v2.0.0 package exports and decoupling."""
 
 from __future__ import annotations
 
@@ -13,9 +13,9 @@ from mdtopdf_skill.cli import main
 
 
 def test_scaffold_imports() -> None:
-    """Verify mdtopdf_skill v1.0.0 exports and absence of legacy mdtopdf_core."""
-    assert mdtopdf_skill.__version__ == "1.0.0"
-    assert len(THEMES) == 7
+    """Verify mdtopdf_skill v2.0.0 exports and absence of legacy mdtopdf_core."""
+    assert mdtopdf_skill.__version__ == "2.0.0"
+    assert len(THEMES) == 2
     assert callable(render_pdf)
     assert callable(find_browser_executable)
     assert callable(main)

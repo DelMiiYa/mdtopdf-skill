@@ -205,7 +205,7 @@ def _is_ci_or_strict_e2e() -> bool:
 
 
 class TestPyprojectAndPackaging:
-    """Verify standalone v1.0.0 packaging metadata, dependencies, markers, and PDF/PNG tools."""
+    """Verify standalone v2.0.0 packaging metadata, dependencies, markers, and PDF/PNG tools."""
 
     def test_pyproject_metadata_and_zero_legacy_deps(self) -> None:
         raw_text = PYPROJECT_PATH.read_text(encoding="utf-8")
@@ -216,20 +216,21 @@ class TestPyprojectAndPackaging:
         config = _load_pyproject()
         project = config["project"]
         assert project["name"] == "mdtopdf-skill"
-        assert project["version"] == "1.0.0"
+        assert project["version"] == "2.0.0"
         assert project["requires-python"] == ">=3.10"
         assert project["scripts"]["mdtopdf"] == "mdtopdf_skill.cli:main"
 
     def test_runtime_and_dev_dependencies(self) -> None:
         config = _load_pyproject()
         runtime_deps = "\n".join(config["project"]["dependencies"]).lower()
-        for pkg in ("markdown", "pymupdf", "pillow", "pyyaml", "pygments"):
+        for pkg in ("markdown", "pymupdf", "pyyaml", "pygments"):
             assert pkg in runtime_deps
+        assert "pillow" not in runtime_deps
         assert "bandit" not in runtime_deps
-        assert len(config["project"]["dependencies"]) == 5
+        assert len(config["project"]["dependencies"]) == 4
 
         dev_deps = "\n".join(config["project"]["optional-dependencies"]["dev"]).lower()
-        for pkg in ("pytest", "pytest-cov", "ruff", "mypy", "bandit"):
+        for pkg in ("pillow", "pytest", "pytest-cov", "ruff", "mypy", "bandit"):
             assert pkg in dev_deps
 
     def test_package_data_and_e2e_marker_registered(self) -> None:
@@ -299,10 +300,10 @@ class TestBundledOfflineAssets:
 
 
 class TestV1CoreContracts:
-    """Verify Phase 1A models.py and frontmatter.py v1.0.0 baseline contracts."""
+    """Verify models.py and frontmatter.py v2.0.0 baseline contracts."""
 
     def test_version_and_exit_code_constants(self) -> None:
-        assert mdtopdf_skill.__version__ == "1.0.0"
+        assert mdtopdf_skill.__version__ == "2.0.0"
         assert (
             EXIT_OK,
             EXIT_BAD_ARGS,
@@ -313,12 +314,7 @@ class TestV1CoreContracts:
         ) == (0, 2, 3, 4, 5, 6)
 
     def test_theme_margin_and_page_size_presets(self) -> None:
-        assert (
-            frozenset(
-                {"office", "student", "paper", "tech-spec", "executive", "minimal", "classic"}
-            )
-            == THEME_NAMES
-        )
+        assert frozenset({"classic", "paper"}) == THEME_NAMES
         assert set(MARGIN_PRESETS.keys()) == {"compact", "standard", "comfortable", "wide"}
         assert set(PAGE_SIZE_PRESETS.keys()) == {
             "a4",
@@ -334,13 +330,13 @@ class TestV1CoreContracts:
 
     def test_dataclass_fields_and_compute_page_geometry(self) -> None:
         opts = ConversionOptions()
-        assert opts.theme == "office"
+        assert opts.theme == "classic"
         assert opts.auto_fit is True
         assert opts.strict is False
         assert opts.preview_dpi == 144
 
         res = ConversionResult(
-            output_pdf_path="out.pdf", theme="office", page_count=1, embedded_images=0
+            output_pdf_path="out.pdf", theme="classic", page_count=1, embedded_images=0
         )
         assert res.layout_issues == []
         assert res.mermaid_errors == []

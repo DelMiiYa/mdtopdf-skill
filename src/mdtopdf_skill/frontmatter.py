@@ -35,14 +35,8 @@ _METADATA_STR_FIELDS: tuple[str, ...] = (
     "subtitle",
     "author",
     "date",
-    "course",
-    "instructor",
-    "student",
     "affiliation",
     "abstract",
-    "status",
-    "version",
-    "owner",
 )
 
 

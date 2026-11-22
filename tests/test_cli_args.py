@@ -1,4 +1,4 @@
-"""Tests for v1.0.0 CLI argument parsing, validation, and 4-layer option resolution."""
+"""Tests for v2.0.0 CLI argument parsing, validation, and 4-layer option resolution."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class TestCliArgParsingDefaults:
         assert args.output is None
         assert args.base_dir is None
         assert args.theme is None
-        assert args.list_themes is False
+        assert not hasattr(args, "list_themes")
         assert args.font_size is None
         assert args.line_height is None
         assert args.spacing_scale is None
@@ -49,7 +49,7 @@ class TestCliArgParsingDefaults:
         assert args.json is False
         assert args.quiet is False
 
-    def test_explicit_output_base_dir_and_list_themes(self) -> None:
+    def test_explicit_output_base_dir_and_removed_list_themes(self) -> None:
         args = parse_args([
             "doc.md",
             "-o",
@@ -60,9 +60,11 @@ class TestCliArgParsingDefaults:
         assert args.output == "out.pdf"
         assert args.base_dir == "/custom/dir"
 
-        list_args = parse_args(["--list-themes"])
-        assert list_args.list_themes is True
-        assert list_args.input is None
+        with pytest.raises(CliArgumentError):
+            parse_args(["--list-themes"])
+
+        with pytest.raises(CliArgumentError):
+            parse_args([])
 
 
 class TestFontSizeValidation:
@@ -142,20 +144,20 @@ class TestThemeAndPageSizeValidation:
     @pytest.mark.parametrize(
         ("raw_theme", "expected"),
         [
-            ("office", "office"),
-            ("STUDENT", "student"),
-            ("Paper", "paper"),
-            ("tech-spec", "tech-spec"),
-            ("EXECUTIVE", "executive"),
-            ("minimal", "minimal"),
+            ("classic", "classic"),
             ("Classic", "classic"),
+            ("paper", "paper"),
+            ("PAPER", "paper"),
         ],
     )
     def test_valid_themes_case_insensitive(self, raw_theme: str, expected: str) -> None:
         args = parse_args(["doc.md", "--theme", raw_theme])
         assert args.theme == expected
 
-    @pytest.mark.parametrize("bad_theme", ["", "unknown-theme", "darkmode"])
+    @pytest.mark.parametrize(
+        "bad_theme",
+        ["", "office", "student", "tech-spec", "executive", "minimal", "unknown-theme", "darkmode"],
+    )
     def test_invalid_theme_raises(self, bad_theme: str) -> None:
         with pytest.raises(CliArgumentError, match=r"Unknown theme"):
             parse_args(["doc.md", "--theme", bad_theme])
@@ -353,15 +355,15 @@ class TestBooleanFlagsAndPrecedence:
         assert opts_cli.accent_color == "#0369a1"  # CLI override
         assert opts_cli.toc is False  # --no-toc override
 
-    def test_default_office_options(self) -> None:
+    def test_default_classic_options(self) -> None:
         args = parse_args(["doc.md"])
         options = build_conversion_options(args)
-        assert options.theme == "office"
+        assert options.theme == "classic"
         assert options.font_size_pt == 9.5
         assert options.line_height == 1.45
-        assert options.margin_css == "15mm 16mm"
+        assert options.margin_css == "12mm 14mm"
         assert options.page_size == "A4 portrait"
-        assert options.accent_color == "#0f3d7a"
+        assert options.accent_color == "#0d47a1"
         assert options.page_numbers is True
         assert options.toc is False
         assert options.auto_fit is True

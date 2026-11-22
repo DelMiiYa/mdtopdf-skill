@@ -1,6 +1,6 @@
 ---
 name: md-to-pdf
-description: Use this skill when the user wants to convert, export, or print Markdown (.md) documents into print-ready PDFs with built-in themes (office, student, paper, tech-spec, executive, minimal, classic), YAML frontmatter, Mermaid diagrams, KaTeX math formulas, tables, Thai/Unicode text, local images, or automatic layout verification and fitting. Do not use for editing existing PDFs or converting Word/DOCX files.
+description: Use this skill when the user wants to convert, export, or print Markdown (.md) documents into print-ready PDFs with built-in themes (classic, paper), YAML frontmatter, Mermaid diagrams, KaTeX math formulas, tables, Thai/Unicode text, local images, or automatic layout verification and fitting. Do not use for editing existing PDFs or converting Word/DOCX files.
 ---
 
 # Markdown to PDF (`md-to-pdf`)
@@ -16,7 +16,7 @@ mdtopdf "INPUT.md" --json
 ```
 
 Most-used flags:
-- `--theme {office,student,paper,tech-spec,executive,minimal,classic}` — Print theme (default `office`)
+- `--theme {classic,paper}` — Print theme (default `classic`)
 - `-o OUT.pdf` — Custom output PDF path (defaults to `<INPUT>.pdf`)
 - `--page-size "A4 landscape"` — Paper size preset (`A4`, `Letter`, `Legal` + `portrait`/`landscape`) or `<W> <H>`
 - `--margin {compact,standard,comfortable,wide}` — Page margin preset or CSS lengths (e.g. `"12mm 14mm"`)
@@ -43,8 +43,8 @@ Most-used flags:
 # Convert a local Markdown document with JSON telemetry
 mdtopdf "docs/report.md" --json
 
-# Render an engineering spec in landscape with strict verification and previews
-mdtopdf "specs/rfc.md" --theme tech-spec --page-size "A4 landscape" --strict --preview-dir build/previews --json
+# Render an academic paper in landscape with strict verification and previews
+mdtopdf "specs/paper.md" --theme paper --page-size "A4 landscape" --strict --preview-dir build/previews --json
 
 # Read UTF-8 Markdown from stdin (--base-dir is required with '-')
 python -X utf8 -c "print('# สรุปรายงาน\n\n$$E = mc^2$$')" | mdtopdf - --base-dir docs -o build/report.pdf --json

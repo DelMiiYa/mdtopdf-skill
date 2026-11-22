@@ -669,34 +669,6 @@ def _transform_task_lists(html_body: str) -> str:
     return _TASK_ITEM_RE.sub(_replace_task, html_body)
 
 
-def _wrap_station_blocks(html_body: str) -> str:
-    """Wrap `<h3>...</h3>` followed immediately by `<ul>` or `<ol>` in `.station-block`."""
-    h3_list_re = re.compile(r"(<h3\b[^>]*>[\s\S]*?</h3>\s*)(<(ul|ol)\b[^>]*>)", flags=re.IGNORECASE)
-    out: list[str] = []
-    pos = 0
-
-    while True:
-        match = h3_list_re.search(html_body, pos)
-        if match is None:
-            out.append(html_body[pos:])
-            break
-
-        out.append(html_body[pos : match.start()])
-        list_tag = match.group(3).lower()
-        close_span = _find_matching_close_tag(html_body, match.end(), list_tag)
-        if close_span is None:
-            out.append(html_body[match.start() : match.end()])
-            pos = match.end()
-            continue
-
-        _, close_end = close_span
-        block = html_body[match.start() : close_end]
-        out.append(f'<div class="station-block">\n{block}\n</div>')
-        pos = close_end
-
-    return "".join(out)
-
-
 def _replace_p_wrapped(html_text: str, token: str, replacement: str) -> str:
     """Replace `<p>token</p>` (or bare `token`) with ``replacement`` without regex backrefs."""
     pattern = re.compile(rf"<p>\s*{re.escape(token)}\s*</p>")
@@ -949,8 +921,6 @@ def build_html_document(
     # Stage 10: Post-sanitization transforms & Mermaid/Math restoration
     html_body = _transform_github_alerts(html_body)
     html_body = _transform_task_lists(html_body)
-    if options.keep_blocks_together:
-        html_body = _wrap_station_blocks(html_body)
     html_body = _restore_placeholders(
         html_body, mermaid_prefix, mermaid_blocks, math_prefix, math_spans
     )

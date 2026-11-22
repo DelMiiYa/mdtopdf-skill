@@ -31,10 +31,10 @@ class TestThemeRegistryAndLookup:
 
     def test_themes_match_models_theme_names_and_single_default(self) -> None:
         assert set(THEMES.keys()) == THEME_NAMES
-        assert len(THEMES) == 7
+        assert len(THEMES) == 2
         defaults = [name for name, spec in THEMES.items() if spec.is_default]
-        assert defaults == ["office"]
-        assert THEMES["office"] == _DEFAULT_THEME_SPEC
+        assert defaults == ["classic"]
+        assert THEMES["classic"] == _DEFAULT_THEME_SPEC
 
     @pytest.mark.parametrize(
         (
@@ -46,13 +46,8 @@ class TestThemeRegistryAndLookup:
             "page_numbers",
         ),
         [
-            ("office", 9.5, 1.45, "15mm 16mm", "#0f3d7a", True),
-            ("student", 10.0, 1.52, "14mm 15mm", "#2b4c7e", True),
+            ("classic", 9.5, 1.45, "12mm 14mm", "#0d47a1", True),
             ("paper", 10.0, 1.48, "18mm 20mm", "#1e293b", True),
-            ("tech-spec", 9.2, 1.42, "13mm 14mm", "#0369a1", True),
-            ("executive", 10.2, 1.50, "16mm 18mm", "#1d4ed8", True),
-            ("minimal", 9.5, 1.48, "16mm 18mm", "#111827", True),
-            ("classic", 9.5, 1.45, "12mm 14mm", "#0d47a1", False),
         ],
     )
     def test_theme_spec_defaults_and_thai_font_stacks(
@@ -86,11 +81,10 @@ class TestThemeRegistryAndLookup:
     @pytest.mark.parametrize(
         ("raw_name", "expected"),
         [
-            ("office", "office"),
-            ("  OFFICE ", "office"),
+            ("classic", "classic"),
+            ("  CLASSIC ", "classic"),
             ("Paper", "paper"),
-            ("  tech-spec\t", "tech-spec"),
-            ("CLASSIC", "classic"),
+            ("  paper\t", "paper"),
         ],
     )
     def test_get_theme_normalizes_whitespace_and_case(
@@ -99,7 +93,21 @@ class TestThemeRegistryAndLookup:
         spec = get_theme(raw_name)
         assert spec is THEMES[expected]
 
-    @pytest.mark.parametrize("bad_name", ["", "   ", "tech_spec", "unknown", 123, None])
+    @pytest.mark.parametrize(
+        "bad_name",
+        [
+            "",
+            "   ",
+            "office",
+            "student",
+            "tech-spec",
+            "executive",
+            "minimal",
+            "unknown",
+            123,
+            None,
+        ],
+    )
     def test_get_theme_invalid_raises_value_error(self, bad_name: object) -> None:
         with pytest.raises(ValueError) as exc_info:
             get_theme(bad_name)  # type: ignore[arg-type]
@@ -113,7 +121,7 @@ class TestThemeRegistryAndLookup:
         assert classic_opts.theme == "classic"
         assert classic_opts.accent_color == "#0d47a1"
         assert classic_opts.margin_css == "12mm 14mm"
-        assert classic_opts.page_numbers is False
+        assert classic_opts.page_numbers is True
 
         paper_opts = resolve_effective_options(
             frontmatter=FrontmatterData(theme="paper", title="Research"),
@@ -199,7 +207,7 @@ class TestBuildThemeCss:
         assert ".mermaid-error-box" in css
         assert ".mermaid-error-badge" in css
 
-        # Math, callouts, tasks, TOC, footnotes, station-block, doc-header
+        # Math, callouts, tasks, TOC, footnotes, doc-header
         for selector in (
             ".math-error",
             ".math-inline",
@@ -219,11 +227,22 @@ class TestBuildThemeCss:
             ".footnote",
             ".footnote-ref",
             ".footnote-backref",
-            ".station-block",
             ".doc-header",
             f".doc-header-{theme_name}",
         ):
             assert selector in css
+
+        for removed in (
+            ".station-block",
+            ".doc-header-status-badge",
+            ".doc-header-meta-grid",
+            ".doc-header-office",
+            ".doc-header-student",
+            ".doc-header-tech-spec",
+            ".doc-header-executive",
+            ".doc-header-minimal",
+        ):
+            assert removed not in css
 
     def test_classic_theme_v020_parity(self) -> None:
         opts = resolve_effective_options(theme="classic", themes=THEMES)
@@ -267,7 +286,7 @@ class TestBuildThemeCss:
 
     def test_custom_options_spacing_scale_and_image_limits(self) -> None:
         opts = ConversionOptions(
-            theme="tech-spec",
+            theme="paper",
             page_size="a4 landscape",
             margin_css="compact",
             accent_color="crimson",
@@ -333,7 +352,7 @@ class TestBuildMetadataHeaderHtml:
     """Verify metadata header rendering, H1 dedup title, and HTML/XSS escaping."""
 
     def test_returns_empty_when_no_title_or_metadata(self) -> None:
-        opts = ConversionOptions(theme="office")
+        opts = ConversionOptions(theme="classic")
         fm = FrontmatterData()
         assert build_metadata_header_html(opts, fm) == ("", None)
 
@@ -341,16 +360,16 @@ class TestBuildMetadataHeaderHtml:
         assert build_metadata_header_html(opts, fm_ws) == ("", None)
 
     def test_fm_title_with_default_options_renders_fm_title(self) -> None:
-        opts = ConversionOptions(theme="office", title=DEFAULT_TITLE)
+        opts = ConversionOptions(theme="classic", title=DEFAULT_TITLE)
         fm = FrontmatterData(title="Quarterly Engineering Report")
         header_html, dedup_title = build_metadata_header_html(opts, fm)
 
         assert dedup_title == "Quarterly Engineering Report"
-        assert '<header class="doc-header doc-header-office">' in header_html
+        assert '<header class="doc-header doc-header-classic">' in header_html
         assert '<h1 class="doc-header-title">Quarterly Engineering Report</h1>' in header_html
 
     def test_cli_non_default_title_overrides_fm_title(self) -> None:
-        opts = ConversionOptions(theme="office", title="CLI Override Title")
+        opts = ConversionOptions(theme="classic", title="CLI Override Title")
         fm = FrontmatterData(title="FM Title", author="Alice")
         header_html, dedup_title = build_metadata_header_html(opts, fm)
 
@@ -360,7 +379,7 @@ class TestBuildMetadataHeaderHtml:
         assert "Alice" in header_html
 
     def test_metadata_only_without_cli_or_fm_title_does_not_emit_fake_heading(self) -> None:
-        opts = ConversionOptions(theme="office", title=DEFAULT_TITLE)
+        opts = ConversionOptions(theme="classic", title=DEFAULT_TITLE)
         fm = FrontmatterData(author="Alice", date="2026-01-15")
         header_html, dedup_title = build_metadata_header_html(opts, fm)
 
@@ -371,7 +390,7 @@ class TestBuildMetadataHeaderHtml:
         assert "2026-01-15" in header_html
 
     def test_metadata_only_with_non_default_cli_title_renders_heading(self) -> None:
-        opts = ConversionOptions(theme="office", title="Explicit CLI Title")
+        opts = ConversionOptions(theme="classic", title="Explicit CLI Title")
         fm = FrontmatterData(author="Alice")
         header_html, dedup_title = build_metadata_header_html(opts, fm)
 
@@ -387,14 +406,8 @@ class TestBuildMetadataHeaderHtml:
             subtitle="Subheading",
             author="Dr. Somchai",
             date="2026-03-10",
-            course="CS101",
-            instructor="Prof. Lee",
-            student="Nattapong",
             affiliation="Bangkok Tech",
             abstract="Summary of findings.",
-            status="In Review",
-            version="v2.1",
-            owner="Platform Team",
         )
         header_html, dedup_title = build_metadata_header_html(opts, fm)
 
@@ -405,33 +418,20 @@ class TestBuildMetadataHeaderHtml:
             "Subheading",
             "Dr. Somchai",
             "2026-03-10",
-            "CS101",
-            "Prof. Lee",
-            "Nattapong",
             "Bangkok Tech",
             "Summary of findings.",
-            "In Review",
-            "v2.1",
-            "Platform Team",
         ):
             assert val in header_html
-        assert "doc-header-status-in-review" in header_html
 
-    def test_html_and_xss_escaping_across_metadata_and_status_class(self) -> None:
-        opts = ConversionOptions(theme="tech-spec", title='<script>alert("t")</script>')
+    def test_html_and_xss_escaping_across_metadata(self) -> None:
+        opts = ConversionOptions(theme="paper", title='<script>alert("t")</script>')
         fm = FrontmatterData(
             title="Ignored",
             subtitle='<b>"sub"</b>',
             author="A & B <dev@example.com>",
             date="2026-01-01<img>",
-            course="<course>",
-            instructor="'inst'",
-            student="<stud>",
-            affiliation="<aff>",
+            affiliation="'aff'",
             abstract="<script>bad()</script>",
-            status='Draft "1" <script>',
-            version="<1.0>",
-            owner="O&W",
         )
         header_html, dedup_title = build_metadata_header_html(opts, fm)
 
@@ -443,8 +443,7 @@ class TestBuildMetadataHeaderHtml:
         assert "<b>" not in header_html
         assert "&lt;script&gt;alert(&quot;t&quot;)&lt;/script&gt;" in header_html
         assert "A &amp; B &lt;dev@example.com&gt;" in header_html
-        assert "&#x27;inst&#x27;" in header_html
-        assert 'class="doc-header-status-badge doc-header-status-draft-1-script"' in header_html
+        assert "&#x27;aff&#x27;" in header_html
 
 
 class TestBuildHeaderFooterTemplates:
@@ -469,7 +468,7 @@ class TestBuildHeaderFooterTemplates:
         self, thin_margin: str
     ) -> None:
         opts = ConversionOptions(
-            theme="office",
+            theme="classic",
             margin_css=thin_margin,
             title="Report",
             page_numbers=True,
@@ -488,7 +487,7 @@ class TestBuildHeaderFooterTemplates:
     )
     def test_margins_at_or_above_8mm_allow_header_footer(self, ok_margin: str) -> None:
         opts = ConversionOptions(
-            theme="office",
+            theme="paper",
             margin_css=ok_margin,
             title="Report",
             page_numbers=True,
@@ -500,28 +499,43 @@ class TestBuildHeaderFooterTemplates:
         assert "Report" in header
         assert 'class="pageNumber"' in footer
 
-    def test_classic_defaults_to_disabled(self) -> None:
+    def test_classic_defaults_to_page_numbers_without_running_header(self) -> None:
         opts = resolve_effective_options(theme="classic", themes=THEMES)
-        assert build_header_footer_templates(opts, FrontmatterData()) == (False, "", "")
+        display, header, footer = build_header_footer_templates(opts, FrontmatterData())
+        assert display is True
+        assert header == "<span></span>"
+        assert 'class="pageNumber"' in footer
+        assert "Page <span" not in footer
 
-        # Even with a title, classic has page_numbers=False and no default header/footer
+        # With a title, classic still emits page numbers only (no running header)
         opts_with_title = resolve_effective_options(
             theme="classic",
             frontmatter=FrontmatterData(title="Classic Doc"),
             themes=THEMES,
         )
-        assert build_header_footer_templates(
+        display_t, header_t, footer_t = build_header_footer_templates(
             opts_with_title, FrontmatterData(title="Classic Doc")
-        ) == (
-            False,
-            "",
-            "",
         )
+        assert display_t is True
+        assert header_t == "<span></span>"
+        assert "Classic Doc" not in header_t
+        assert 'class="pageNumber"' in footer_t
 
-    def test_office_without_explicit_title_omits_default_placeholder_and_uses_span_stub(
+        # Opting out of page numbers on classic disables header/footer completely
+        opts_no_num = resolve_effective_options(
+            theme="classic",
+            frontmatter=FrontmatterData(title="Classic Doc"),
+            page_numbers=False,
+            themes=THEMES,
+        )
+        assert build_header_footer_templates(
+            opts_no_num, FrontmatterData(title="Classic Doc")
+        ) == (False, "", "")
+
+    def test_paper_without_explicit_title_omits_default_placeholder_and_uses_span_stub(
         self,
     ) -> None:
-        opts = resolve_effective_options(theme="office", themes=THEMES)
+        opts = resolve_effective_options(theme="paper", themes=THEMES)
         display, header, footer = build_header_footer_templates(opts, FrontmatterData())
 
         assert display is True
@@ -530,19 +544,20 @@ class TestBuildHeaderFooterTemplates:
         assert "font-size: 8px;" in footer
         assert 'class="pageNumber"' in footer
         assert 'class="totalPages"' in footer
+        assert "Page <span" in footer
 
     def test_independent_toggles_header_footer_and_page_numbers(self) -> None:
         fm = FrontmatterData(title="Spec", author="Alice", date="2026-02-01")
 
         # page_numbers=False, header=False, footer=False -> disabled
         opts_all_off = ConversionOptions(
-            theme="office", title="Spec", page_numbers=False, header=False, footer=False
+            theme="classic", title="Spec", page_numbers=False, header=False, footer=False
         )
         assert build_header_footer_templates(opts_all_off, fm) == (False, "", "")
 
         # header only -> inactive footer MUST be "<span></span>"
         opts_hdr_only = ConversionOptions(
-            theme="office", title="Spec", page_numbers=False, header="Confidential", footer=False
+            theme="classic", title="Spec", page_numbers=False, header="Confidential", footer=False
         )
         display, header, footer = build_header_footer_templates(opts_hdr_only, fm)
         assert display is True
@@ -552,22 +567,22 @@ class TestBuildHeaderFooterTemplates:
 
         # footer=False does NOT suppress page_numbers=True
         opts_pg_only = ConversionOptions(
-            theme="office", title="Spec", page_numbers=True, header=False, footer=False
+            theme="classic", title="Spec", page_numbers=True, header=False, footer=False
         )
         display, header, footer = build_header_footer_templates(opts_pg_only, fm)
         assert display is True
         assert header == "<span></span>"
         assert 'class="pageNumber"' in footer
 
-        # header=True / footer=True explicit enable on minimal
-        opts_min = ConversionOptions(
-            theme="minimal",
+        # header=True / footer=True explicit enable on classic
+        opts_classic_hf = ConversionOptions(
+            theme="classic",
             title="CV",
             page_numbers=True,
             header=True,
             footer=True,
         )
-        display, header, footer = build_header_footer_templates(opts_min, fm)
+        display, header, footer = build_header_footer_templates(opts_classic_hf, fm)
         assert display is True
         assert "CV" in header
         assert "Alice · 2026-02-01" in footer
@@ -590,7 +605,7 @@ class TestBuildHeaderFooterTemplates:
         assert "Internal Only" in footer
         assert "pageNumber" not in footer
 
-    def test_paper_and_executive_footer_defaults(self) -> None:
+    def test_paper_footer_defaults(self) -> None:
         fm = FrontmatterData(title="Study", author="Dr. A", date="2026-04-01")
 
         paper_opts = resolve_effective_options(theme="paper", frontmatter=fm, themes=THEMES)
@@ -599,16 +614,11 @@ class TestBuildHeaderFooterTemplates:
         assert "Study" in header
         assert "Dr. A · 2026-04-01" in footer
         assert 'class="pageNumber"' in footer
-
-        exec_opts = resolve_effective_options(theme="executive", frontmatter=fm, themes=THEMES)
-        display, header, footer = build_header_footer_templates(exec_opts, fm)
-        assert display is True
-        assert header == "<span></span>"
-        assert "Study · 2026-04-01" in footer
+        assert "Page <span" in footer
 
     def test_header_footer_html_escaping_prevents_xss(self) -> None:
         opts = ConversionOptions(
-            theme="office",
+            theme="classic",
             header='<script>evil()</script> & "H"',
             footer="<img src=x onerror=alert(1)>",
             page_numbers=True,

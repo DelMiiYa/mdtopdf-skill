@@ -1,4 +1,4 @@
-"""Opaque-box 4-Tier E2E test suite for mdtopdf-skill v1.0.0.
+"""Opaque-box 4-Tier E2E test suite for mdtopdf-skill v2.0.0.
 
 All tests invoke the real CLI via subprocess (``python -m mdtopdf_skill.cli`` or
 the installed ``mdtopdf`` console script) and verify observable outputs only:
@@ -53,13 +53,8 @@ SUCCESS_JSON_KEYS: frozenset[str] = frozenset(
 )
 
 ALL_THEME_NAMES: tuple[str, ...] = (
-    "office",
-    "student",
-    "paper",
-    "tech-spec",
-    "executive",
-    "minimal",
     "classic",
+    "paper",
 )
 
 _MM_TO_PT = 72.0 / 25.4
@@ -204,11 +199,11 @@ def _is_ci_or_strict_e2e() -> bool:
 
 @pytest.fixture(scope="session")
 def require_v1_cli() -> None:
-    """Fail immediately if the v1.0.0 CLI is unavailable or broken."""
+    """Fail immediately if the v2.0.0 CLI is unavailable or broken."""
     result = run_cli(["--version"])
-    if result.returncode != EXIT_OK or "mdtopdf-skill 1.0.0" not in result.stdout:
+    if result.returncode != EXIT_OK or "mdtopdf-skill 2.0.0" not in result.stdout:
         pytest.fail(
-            "v1.0.0 CLI unavailable: "
+            "v2.0.0 CLI unavailable: "
             f"returncode={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"
         )
 
@@ -358,12 +353,12 @@ def _validate_diagnostic_lists(data: dict[str, Any]) -> None:
 
 
 def assert_success_json(stdout: str, *, expected_theme: str | None = None) -> dict[str, Any]:
-    """Assert v1.0.0 §4 Conversion Success JSON schema."""
+    """Assert v2.0.0 Conversion Success JSON schema."""
     data: dict[str, Any] = json.loads(stdout.strip())
     assert "core_version" not in data
     assert set(data.keys()) == SUCCESS_JSON_KEYS
     assert data["ok"] is True
-    assert data["version"] == "1.0.0"
+    assert data["version"] == "2.0.0"
     assert isinstance(data["output"], str) and len(data["output"]) > 0
     assert isinstance(data["theme"], str)
     if expected_theme is not None:
@@ -379,52 +374,27 @@ def assert_success_json(stdout: str, *, expected_theme: str | None = None) -> di
 
 
 def assert_strict_failure_json(stdout: str) -> dict[str, Any]:
-    """Assert v1.0.0 §4 Strict Failure JSON schema (exit 6)."""
+    """Assert v2.0.0 Strict Failure JSON schema (exit 6)."""
     data: dict[str, Any] = json.loads(stdout.strip())
     assert "core_version" not in data
     assert set(data.keys()) == SUCCESS_JSON_KEYS | {"code", "error"}
     assert data["ok"] is False
     assert data["code"] == EXIT_STRICT_ISSUE
     assert isinstance(data["error"], str) and len(data["error"]) > 0
-    assert data["version"] == "1.0.0"
+    assert data["version"] == "2.0.0"
     assert isinstance(data["pages"], int) and data["pages"] >= 1
     _validate_diagnostic_lists(data)
     return data
 
 
 def assert_error_json(stdout: str, expected_code: int) -> dict[str, Any]:
-    """Assert v1.0.0 §4 Standard Error JSON schema (exit 2..5)."""
+    """Assert v2.0.0 Standard Error JSON schema (exit 2..5)."""
     data: dict[str, Any] = json.loads(stdout.strip())
     assert "core_version" not in data
     assert set(data.keys()) == {"ok", "error", "code"}
     assert data["ok"] is False
     assert data["code"] == expected_code
     assert isinstance(data["error"], str) and len(data["error"]) > 0
-    return data
-
-
-def assert_list_themes_json(stdout: str) -> dict[str, Any]:
-    """Assert v1.0.0 §4 --list-themes --json schema."""
-    data: dict[str, Any] = json.loads(stdout.strip())
-    assert "core_version" not in data
-    assert set(data.keys()) == {"ok", "themes", "version"}
-    assert data["ok"] is True
-    assert data["version"] == "1.0.0"
-    themes = data["themes"]
-    assert isinstance(themes, list) and len(themes) == 7
-    names: list[str] = []
-    defaults: list[str] = []
-    for entry in themes:
-        assert isinstance(entry, dict)
-        assert set(entry.keys()) == {"name", "default", "description"}
-        assert isinstance(entry["name"], str)
-        assert isinstance(entry["default"], bool)
-        assert isinstance(entry["description"], str) and len(entry["description"]) > 0
-        names.append(entry["name"])
-        if entry["default"]:
-            defaults.append(entry["name"])
-    assert set(names) == set(ALL_THEME_NAMES)
-    assert defaults == ["office"]
     return data
 
 
@@ -435,7 +405,7 @@ def _calibrate_orphan_markdown(
     extra_cli_args: Sequence[str] = (),
 ) -> tuple[Path, dict[str, Any]]:
     """Find a paragraph count producing a 2-page trailing_orphan_page under --no-auto-fit."""
-    for count in range(32, 62, 2):
+    for count in range(32, 72, 2):
         candidate = tmp_path / f"orphan_probe_{count}.md"
         out_pdf = tmp_path / f"orphan_probe_{count}.pdf"
         paragraphs = "\n\n".join(
@@ -461,11 +431,11 @@ def _calibrate_orphan_markdown(
                 issue["kind"] == "trailing_orphan_page" for issue in data["layout_issues"]
             ):
                 return candidate, data
-    pytest.fail("Could not calibrate a 2-page trailing orphan document within 32..60 paragraphs.")
+    pytest.fail("Could not calibrate a 2-page trailing orphan document within 32..70 paragraphs.")
 
 
 # =============================================================================
-# TIER 1: CORE FEATURE COVERAGE (HAPPY PATH, >= 5 PER F1-F10)
+# TIER 1: CORE FEATURE COVERAGE (HAPPY PATH)
 # =============================================================================
 
 
@@ -481,26 +451,13 @@ class TestTier1FeatureCoverage:
         _ = tmp_path
         res_mod = run_cli(["--version"])
         assert res_mod.returncode == EXIT_OK
-        assert "mdtopdf-skill 1.0.0" in res_mod.stdout
+        assert "mdtopdf-skill 2.0.0" in res_mod.stdout
 
         ep = _entry_point_path()
         if ep.is_file():
             res_ep = run_cli(["--version"], use_entry_point=True)
             assert res_ep.returncode == EXIT_OK
-            assert "mdtopdf-skill 1.0.0" in res_ep.stdout
-
-    def test_f1_list_themes_human_and_json(
-        self, require_v1_cli: None, tmp_path: Path
-    ) -> None:
-        _ = tmp_path
-        res_human = run_cli(["--list-themes"])
-        assert res_human.returncode == EXIT_OK
-        for name in ALL_THEME_NAMES:
-            assert name in res_human.stdout
-
-        res_json = run_cli(["--list-themes", "--json"])
-        assert res_json.returncode == EXIT_OK
-        assert_list_themes_json(res_json.stdout)
+            assert "mdtopdf-skill 2.0.0" in res_ep.stdout
 
     def test_f1_default_output_adjacent_pdf_and_human_summary(
         self, require_browser: Path, tmp_path: Path
@@ -560,7 +517,7 @@ class TestTier1FeatureCoverage:
 
         res_json = run_cli([str(md_file), "--json"])
         assert res_json.returncode == EXIT_OK
-        data = assert_success_json(res_json.stdout, expected_theme="office")
+        data = assert_success_json(res_json.stdout, expected_theme="classic")
         inspect_pdf(Path(data["output"]))
 
         quiet_pdf = tmp_path / "quiet.pdf"
@@ -569,7 +526,7 @@ class TestTier1FeatureCoverage:
         assert res_quiet.stdout == ""
         inspect_pdf(quiet_pdf)
 
-    # --- F2: Seven Print Themes (7 parametrized cases) ---
+    # --- F2: Print Themes (classic, paper) ---
 
     @pytest.mark.parametrize("theme_name", ALL_THEME_NAMES)
     def test_f2_render_each_theme(
@@ -601,26 +558,20 @@ class TestTier1FeatureCoverage:
 
     # --- F3: YAML Frontmatter & 4-Layer Precedence ---
 
-    def test_f3_frontmatter_all_25_fields_parsed_without_warnings(
+    def test_f3_frontmatter_all_19_fields_parsed_without_warnings(
         self, require_browser: Path, tmp_path: Path
     ) -> None:
-        md_file = tmp_path / "all_25.md"
+        md_file = tmp_path / "all_19.md"
         md_file.write_text(
             "---\n"
-            "theme: tech-spec\n"
+            "theme: paper\n"
             "lang: en\n"
             "title: Complete Spec\n"
-            "subtitle: All 25 Frontmatter Keys\n"
+            "subtitle: All 19 Frontmatter Keys\n"
             "author: Alice\n"
             "date: 2026-11-19\n"
-            "course: CS401\n"
-            "instructor: Prof. Bob\n"
-            "student: Carol\n"
             "affiliation: Engineering Lab\n"
             "abstract: Executive abstract summary.\n"
-            "status: Approved\n"
-            "version: 1.0\n"
-            "owner: Platform Team\n"
             "font_size: 10.0\n"
             "line_height: 1.45\n"
             "spacing_scale: 0.95\n"
@@ -638,11 +589,11 @@ class TestTier1FeatureCoverage:
         )
         res = run_cli([str(md_file), "--json"])
         assert res.returncode == EXIT_OK
-        data = assert_success_json(res.stdout, expected_theme="tech-spec")
+        data = assert_success_json(res.stdout, expected_theme="paper")
         assert data["warnings"] == []
         summary = inspect_pdf(Path(data["output"]))
         assert "Complete Spec" in summary.full_text
-        assert "Approved" in summary.full_text
+        assert "Engineering Lab" in summary.full_text
 
     def test_f3_frontmatter_hyphen_and_accent_aliases(
         self, require_browser: Path, tmp_path: Path
@@ -674,7 +625,7 @@ class TestTier1FeatureCoverage:
         md_file = tmp_path / "bom_crlf.md"
         raw = (
             "\ufeff---\r\n"
-            "theme: minimal\r\n"
+            "theme: paper\r\n"
             "title: BOM Header Title\r\n"
             "---\r\n"
             "Content after CRLF BOM frontmatter.\r\n"
@@ -682,7 +633,7 @@ class TestTier1FeatureCoverage:
         md_file.write_bytes(raw.encode("utf-8"))
         res = run_cli([str(md_file), "--json"])
         assert res.returncode == EXIT_OK
-        data = assert_success_json(res.stdout, expected_theme="minimal")
+        data = assert_success_json(res.stdout, expected_theme="paper")
         assert data["warnings"] == []
         summary = inspect_pdf(Path(data["output"]))
         assert "BOM Header Title" in summary.full_text
@@ -705,7 +656,7 @@ class TestTier1FeatureCoverage:
             [
                 str(md_file),
                 "--theme",
-                "executive",
+                "classic",
                 "--page-size",
                 "A4 landscape",
                 "--title",
@@ -714,7 +665,7 @@ class TestTier1FeatureCoverage:
             ]
         )
         assert res.returncode == EXIT_OK
-        data = assert_success_json(res.stdout, expected_theme="executive")
+        data = assert_success_json(res.stdout, expected_theme="classic")
         summary = inspect_pdf(Path(data["output"]))
         assert_page_size_mm(summary, 297.0, 210.0)
         assert "CLI Title Override" in summary.full_text
@@ -819,6 +770,8 @@ class TestTier1FeatureCoverage:
         res = run_cli(
             [
                 str(md_file),
+                "--theme",
+                "paper",
                 "--accent",
                 "#b91c1c",
                 "--title",
@@ -827,7 +780,7 @@ class TestTier1FeatureCoverage:
             ]
         )
         assert res.returncode == EXIT_OK
-        data = assert_success_json(res.stdout)
+        data = assert_success_json(res.stdout, expected_theme="paper")
         summary = inspect_pdf(Path(data["output"]))
         assert "Explicit CLI Header Title" in summary.full_text
 
@@ -933,19 +886,19 @@ class TestTier1FeatureCoverage:
             "```\n",
             encoding="utf-8",
         )
-        res = run_cli([str(md_file), "--theme", "tech-spec", "--strict", "--json"])
+        res = run_cli([str(md_file), "--theme", "paper", "--strict", "--json"])
         assert res.returncode == EXIT_OK
-        data = assert_success_json(res.stdout, expected_theme="tech-spec")
+        data = assert_success_json(res.stdout, expected_theme="paper")
         assert data["layout_issues"] == []
         summary = inspect_pdf(Path(data["output"]))
         assert "VERY_LONG_CONFIGURATION_IDENTIFIER_" in summary.full_text
 
-    def test_f5_station_blocks_and_css_cascade_order(
+    def test_f5_css_cascade_order_with_keep_together(
         self, require_browser: Path, tmp_path: Path
     ) -> None:
         cli_css = tmp_path / "override.css"
         cli_css.write_text("h3 { letter-spacing: 0.4px; }\n", encoding="utf-8")
-        md_file = tmp_path / "stations.md"
+        md_file = tmp_path / "cascade.md"
         md_file.write_text(
             "---\n"
             "theme: classic\n"
@@ -1445,14 +1398,25 @@ class TestTier2BoundaryAndErrorCases:
         res_dir = run_cli([str(md_file), "-o", str(out_dir)])
         assert res_dir.returncode == EXIT_BAD_ARGS
 
-    # --- F2: Seven Print Themes Boundaries ---
-
-    def test_f2_invalid_cli_theme_exits_2(
+    def test_f1_removed_list_themes_flag_exits_2(
         self, require_v1_cli: None, tmp_path: Path
+    ) -> None:
+        _ = tmp_path
+        res = run_cli(["--list-themes"])
+        assert res.returncode == EXIT_BAD_ARGS
+
+    # --- F2: Print Themes Boundaries ---
+
+    @pytest.mark.parametrize(
+        "bad_theme",
+        ["nonexistent-theme", "office", "student", "tech-spec", "executive", "minimal"],
+    )
+    def test_f2_invalid_or_removed_cli_theme_exits_2(
+        self, require_v1_cli: None, tmp_path: Path, bad_theme: str
     ) -> None:
         md_file = tmp_path / "doc.md"
         md_file.write_text("# Doc\n", encoding="utf-8")
-        res = run_cli([str(md_file), "--theme", "nonexistent-theme"])
+        res = run_cli([str(md_file), "--theme", bad_theme])
         assert res.returncode == EXIT_BAD_ARGS
 
     def test_f2_cli_theme_case_insensitive(
@@ -1460,11 +1424,11 @@ class TestTier2BoundaryAndErrorCases:
     ) -> None:
         md_file = tmp_path / "case_theme.md"
         md_file.write_text("# Case Theme\n\nBody.\n", encoding="utf-8")
-        res = run_cli([str(md_file), "--theme", "STUDENT", "--json"])
+        res = run_cli([str(md_file), "--theme", "PAPER", "--json"])
         assert res.returncode == EXIT_OK
-        assert_success_json(res.stdout, expected_theme="student")
+        assert_success_json(res.stdout, expected_theme="paper")
 
-    def test_f2_invalid_frontmatter_theme_warns_and_falls_back_to_office(
+    def test_f2_invalid_frontmatter_theme_warns_and_falls_back_to_classic(
         self, require_browser: Path, tmp_path: Path
     ) -> None:
         md_file = tmp_path / "bad_fm_theme.md"
@@ -1474,19 +1438,30 @@ class TestTier2BoundaryAndErrorCases:
         )
         res = run_cli([str(md_file), "--json"])
         assert res.returncode == EXIT_OK
-        data = assert_success_json(res.stdout, expected_theme="office")
+        data = assert_success_json(res.stdout, expected_theme="classic")
         assert any("frontmatter_invalid_field" in w for w in data["warnings"])
 
-    def test_f2_classic_no_header_footer_by_default_unless_enabled(
+    def test_f2_classic_default_page_numbers_without_running_header(
         self, require_browser: Path, tmp_path: Path
     ) -> None:
         md_default = tmp_path / "classic_default.md"
-        md_default.write_text("# Classic Default\n\nBody text.\n", encoding="utf-8")
+        md_default.write_text(
+            "---\ntitle: Classic Running Header Check\n---\n"
+            "# Classic Running Header Check\n\nBody text.\n",
+            encoding="utf-8",
+        )
         res_default = run_cli([str(md_default), "--theme", "classic", "--json"])
         assert res_default.returncode == EXIT_OK
         summary_default = inspect_pdf(Path(assert_success_json(res_default.stdout)["output"]))
-        assert "1 / 1" not in summary_default.full_text
+        assert "1 / 1" in summary_default.full_text
         assert "Page 1" not in summary_default.full_text
+
+        res_no_num = run_cli(
+            [str(md_default), "--theme", "classic", "--no-page-numbers", "--json"]
+        )
+        assert res_no_num.returncode == EXIT_OK
+        summary_no_num = inspect_pdf(Path(assert_success_json(res_no_num.stdout)["output"]))
+        assert "1 / 1" not in summary_no_num.full_text
 
     def test_f2_invalid_theme_with_json_emits_error_json(
         self, require_v1_cli: None, tmp_path: Path
@@ -2195,7 +2170,7 @@ class TestTier3CrossFeatureCombinations:
             [
                 str(md_file),
                 "--theme",
-                "tech-spec",
+                "classic",
                 "--accent",
                 "#0369a1",
                 "--no-toc",
@@ -2203,7 +2178,7 @@ class TestTier3CrossFeatureCombinations:
             ]
         )
         assert res.returncode == EXIT_OK
-        data = assert_success_json(res.stdout, expected_theme="tech-spec")
+        data = assert_success_json(res.stdout, expected_theme="classic")
         summary = inspect_pdf(Path(data["output"]))
         assert summary.full_text.count("Unique Section Heading") == 1
 
@@ -2220,12 +2195,12 @@ class TestTier3CrossFeatureCombinations:
         )
         md_file = tmp_path / "t3_02.md"
         md_file.write_text(
-            "---\ntheme: minimal\ncss: fm.css\n---\n# Cascade\n\n## Sub Heading\n\nBody.\n",
+            "---\ntheme: paper\ncss: fm.css\n---\n# Cascade\n\n## Sub Heading\n\nBody.\n",
             encoding="utf-8",
         )
         res = run_cli([str(md_file), "--css", str(override_css), "--strict", "--json"])
         assert res.returncode == EXIT_OK
-        data = assert_success_json(res.stdout, expected_theme="minimal")
+        data = assert_success_json(res.stdout, expected_theme="paper")
         assert data["warnings"] == []
         summary = inspect_pdf(Path(data["output"]))
         assert "PWN" not in summary.full_text
@@ -2235,7 +2210,7 @@ class TestTier3CrossFeatureCombinations:
     ) -> None:
         orphan_md, baseline = _calibrate_orphan_markdown(
             tmp_path,
-            prefix_frontmatter="---\ntheme: office\npage_numbers: true\n---\n",
+            prefix_frontmatter="---\ntheme: classic\npage_numbers: true\n---\n",
             extra_cli_args=("--margin", "11mm 15mm"),
         )
         assert baseline["pages"] == 2
@@ -2252,7 +2227,7 @@ class TestTier3CrossFeatureCombinations:
             ]
         )
         assert res.returncode == EXIT_OK
-        data = assert_success_json(res.stdout, expected_theme="office")
+        data = assert_success_json(res.stdout, expected_theme="classic")
         assert data["pages"] == 1
         assert data["layout_issues"] == []
 
@@ -2439,7 +2414,7 @@ class TestTier3CrossFeatureCombinations:
 class TestTier4RealWorldScenarios:
     """Tier 4 realistic multi-feature documents representing real user workflows."""
 
-    def test_t4_01_thai_corporate_sop_office_theme(
+    def test_t4_01_thai_corporate_sop_classic_theme(
         self, require_browser: Path, tmp_path: Path
     ) -> None:
         create_test_png(tmp_path / "corp_logo.png", width=260, height=90)
@@ -2451,7 +2426,6 @@ class TestTier4RealWorldScenarios:
             "subtitle: ระบบอนุมัติเอกสารประจำไตรมาส 4\n"
             "author: ฝ่ายปฏิบัติการองค์กร\n"
             "date: 2026-11-19\n"
-            "version: 1.4\n"
             "header: false\n"
             "---\n"
             "# คู่มือมาตรฐานการปฏิบัติงาน (SOP)\n\n"
@@ -2468,7 +2442,7 @@ class TestTier4RealWorldScenarios:
             [str(md_file), "--preview-dir", str(preview_dir), "--no-page-numbers", "--json"]
         )
         assert res.returncode == EXIT_OK
-        data = assert_success_json(res.stdout, expected_theme="office")
+        data = assert_success_json(res.stdout, expected_theme="classic")
         assert data["embedded_images"] == 1
         assert data["layout_issues"] == []
         summary = inspect_pdf(Path(data["output"]))
@@ -2476,17 +2450,16 @@ class TestTier4RealWorldScenarios:
         assert "ฝ่ายปฏิบัติการองค์กร" in summary.full_text
         inspect_preview_pngs(preview_dir, data["pages"])
 
-    def test_t4_02_university_engineering_lab_report_student_theme(
+    def test_t4_02_university_engineering_lab_report_classic_theme(
         self, require_browser: Path, tmp_path: Path
     ) -> None:
         md_file = tmp_path / "lab_report.md"
         md_file.write_text(
             "---\n"
-            "theme: student\n"
+            "theme: classic\n"
             "title: Lab 04 - RLC Circuit Frequency Response\n"
-            "course: EE302 Signals and Systems\n"
-            "instructor: Assoc. Prof. Sompong\n"
-            "student: Nattapong K.\n"
+            "subtitle: EE302 Signals and Systems\n"
+            "author: Nattapong K.\n"
             "date: 2026-11-19\n"
             "toc: true\n"
             "---\n"
@@ -2505,7 +2478,7 @@ class TestTier4RealWorldScenarios:
         )
         res = run_cli([str(md_file), "--strict", "--json"])
         assert res.returncode == EXIT_OK
-        data = assert_success_json(res.stdout, expected_theme="student")
+        data = assert_success_json(res.stdout, expected_theme="classic")
         assert data["math_errors"] == []
         assert data["layout_issues"] == []
         summary = inspect_pdf(Path(data["output"]))
@@ -2557,7 +2530,7 @@ class TestTier4RealWorldScenarios:
         assert summary.drawing_count > 0
         inspect_preview_pngs(preview_dir, data["pages"])
 
-    def test_t4_04_engineering_architecture_rfc_tech_spec_theme(
+    def test_t4_04_engineering_architecture_rfc_classic_theme(
         self, require_browser: Path, tmp_path: Path
     ) -> None:
         md_file = tmp_path / "rfc_042.md"
@@ -2567,11 +2540,9 @@ class TestTier4RealWorldScenarios:
         )
         md_file.write_text(
             "---\n"
-            "theme: tech-spec\n"
+            "theme: classic\n"
             "title: RFC-042 Standalone CDP Rendering Engine\n"
-            "status: Approved\n"
-            "version: 2.1\n"
-            "owner: Core Infrastructure\n"
+            "affiliation: Core Infrastructure\n"
             "date: 2026-11-19\n"
             "toc: true\n"
             "---\n"
@@ -2595,23 +2566,23 @@ class TestTier4RealWorldScenarios:
         )
         res = run_cli([str(md_file), "--strict", "--json"])
         assert res.returncode == EXIT_OK
-        data = assert_success_json(res.stdout, expected_theme="tech-spec")
+        data = assert_success_json(res.stdout, expected_theme="classic")
         assert data["mermaid_errors"] == []
         assert data["layout_issues"] == []
         summary = inspect_pdf(Path(data["output"]))
-        assert "Approved" in summary.full_text
+        assert "Core Infrastructure" in summary.full_text
         assert summary.drawing_count > 0
 
     def test_t4_05_executive_proposal_and_self_healing_loop(
         self, require_browser: Path, tmp_path: Path
     ) -> None:
         md_file = tmp_path / "exec_proposal.md"
-        cols = " | ".join(f"Region_{i:02d}_FY26" for i in range(1, 15))
-        sep = " | ".join("---:" for _ in range(1, 15))
-        row = " | ".join(f"${i * 125},000" for i in range(1, 15))
+        cols = " | ".join(f"Region_{i:02d}_FY26" for i in range(1, 17))
+        sep = " | ".join("---:" for _ in range(1, 17))
+        row = " | ".join(f"${i * 125},000" for i in range(1, 17))
         original_content = (
             "---\n"
-            "theme: executive\n"
+            "theme: classic\n"
             "title: FY26 Global Expansion Proposal\n"
             "subtitle: Regional Revenue & Capital Allocation\n"
             "date: 2026-11-19\n"
@@ -2648,13 +2619,13 @@ class TestTier4RealWorldScenarios:
             ]
         )
         assert res_landscape.returncode == EXIT_OK
-        clean_data = assert_success_json(res_landscape.stdout, expected_theme="executive")
+        clean_data = assert_success_json(res_landscape.stdout, expected_theme="classic")
         assert clean_data["layout_issues"] == []
         summary = inspect_pdf(landscape_pdf)
         assert_page_size_mm(summary, 297.0, 210.0)
         assert md_file.read_text(encoding="utf-8") == original_content
 
-    def test_t4_06_classic_thai_station_protocol_and_minimal_resume(
+    def test_t4_06_classic_thai_station_protocol_and_paper_resume(
         self, require_browser: Path, tmp_path: Path
     ) -> None:
         create_test_png(tmp_path / "station_map.png", width=200, height=120)
@@ -2670,7 +2641,9 @@ class TestTier4RealWorldScenarios:
             "| แผนผังจุดบริการ | ![Map](station_map.png) |\n",
             encoding="utf-8",
         )
-        res_classic = run_cli([str(classic_md), "--theme", "classic", "--strict", "--json"])
+        res_classic = run_cli(
+            [str(classic_md), "--theme", "classic", "--no-page-numbers", "--strict", "--json"]
+        )
         assert res_classic.returncode == EXIT_OK
         data_classic = assert_success_json(res_classic.stdout, expected_theme="classic")
         assert data_classic["embedded_images"] == 1
@@ -2678,19 +2651,19 @@ class TestTier4RealWorldScenarios:
         assert "1 / 1" not in classic_summary.full_text
         assert "Page 1" not in classic_summary.full_text
 
-        minimal_md = tmp_path / "minimal_cv.md"
-        minimal_md.write_text(
+        paper_md = tmp_path / "paper_cv.md"
+        paper_md.write_text(
             "# Jordan Lee — Staff Systems Engineer\n\n"
             "## Experience\n\n"
             "- Built offline PDF rendering engines with deterministic pagination.\n"
             "- Reduced CI latency by 45% across Windows and Linux runners.\n",
             encoding="utf-8",
         )
-        res_minimal = run_cli(
+        res_paper = run_cli(
             [
-                str(minimal_md),
+                str(paper_md),
                 "--theme",
-                "minimal",
+                "paper",
                 "--accent",
                 "#111827",
                 "--margin",
@@ -2699,6 +2672,6 @@ class TestTier4RealWorldScenarios:
                 "--json",
             ]
         )
-        assert res_minimal.returncode == EXIT_OK
-        data_minimal = assert_success_json(res_minimal.stdout, expected_theme="minimal")
-        assert "Jordan Lee" in inspect_pdf(Path(data_minimal["output"])).full_text
+        assert res_paper.returncode == EXIT_OK
+        data_paper = assert_success_json(res_paper.stdout, expected_theme="paper")
+        assert "Jordan Lee" in inspect_pdf(Path(data_paper["output"])).full_text

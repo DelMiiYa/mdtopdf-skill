@@ -15,7 +15,7 @@ EXIT_RENDER_ERROR = 4
 EXIT_EMPTY_PDF = 5
 EXIT_STRICT_ISSUE = 6
 
-DEFAULT_THEME = "office"
+DEFAULT_THEME = "classic"
 DEFAULT_LANG = "th"
 DEFAULT_TITLE = "Markdown Document"
 
@@ -26,9 +26,7 @@ LINE_HEIGHT_MAX = 3.0
 SPACING_SCALE_MIN = 0.5
 SPACING_SCALE_MAX = 2.0
 
-THEME_NAMES: frozenset[str] = frozenset(
-    {"office", "student", "paper", "tech-spec", "executive", "minimal", "classic"}
-)
+THEME_NAMES: frozenset[str] = frozenset({"classic", "paper"})
 
 MARGIN_PRESETS: dict[str, str] = {
     "compact": "10mm 12mm",
@@ -248,14 +246,8 @@ class FrontmatterData:
     subtitle: str | None = None
     author: str | None = None
     date: str | None = None
-    course: str | None = None
-    instructor: str | None = None
-    student: str | None = None
     affiliation: str | None = None
     abstract: str | None = None
-    status: str | None = None
-    version: str | None = None
-    owner: str | None = None
     font_size_pt: float | None = None
     line_height: float | None = None
     spacing_scale: float | None = None
@@ -274,18 +266,18 @@ class FrontmatterData:
 class ConversionOptions:
     """Effective conversion options after 4-layer precedence resolution."""
 
-    theme: str = "office"
+    theme: str = "classic"
     lang: str = "th"
     font_size_pt: float = 9.5
     line_height: float = 1.45
     spacing_scale: float = 1.0
-    margin_css: str = "15mm 16mm"
+    margin_css: str = "12mm 14mm"
     page_size: str = "A4 portrait"
     img_max_width: int = 90
     img_max_height: int = 70
     suppress_missing_images: bool = True
     keep_blocks_together: bool = True
-    accent_color: str = "#0f3d7a"
+    accent_color: str = "#0d47a1"
     title: str = "Markdown Document"
     page_numbers: bool = True
     header: str | bool | None = None
@@ -321,17 +313,17 @@ class ConversionResult:
 
 _DEFAULT_THEME_SPEC = ThemeSpec(
     name=DEFAULT_THEME,
-    description="Corporate memos, business reports, and SOPs",
+    description="Clean sans-serif layout for general documents and reports",
     font_size_pt=9.5,
     line_height=1.45,
-    margin_css="15mm 16mm",
-    accent_color="#0f3d7a",
+    margin_css="12mm 14mm",
+    accent_color="#0d47a1",
     page_numbers=True,
     font_family=(
-        "'Leelawadee UI', 'Tahoma', 'Noto Sans Thai', 'Sarabun', "
-        "'Noto Sans', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif"
+        "'Leelawadee UI', 'Tahoma', 'Noto Sans Thai', 'Noto Sans', "
+        "'Segoe UI Symbol', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif"
     ),
-    mono_family="'Consolas', 'JetBrains Mono', 'Noto Sans Mono', 'DejaVu Sans Mono', monospace",
+    mono_family="'Consolas', 'Noto Sans Mono', 'DejaVu Sans Mono', 'Courier New', monospace",
     is_default=True,
 )
 

@@ -1,11 +1,11 @@
 {
   "name": "md-to-pdf",
   "displayName": "Markdown to PDF",
-  "version": "1.0.0",
-  "description": "Convert Markdown documents (7 built-in print themes, YAML frontmatter, Mermaid diagrams, KaTeX math, tables, Thai/Unicode text, and local images) into verified print-ready PDFs using the standalone mdtopdf CLI.",
+  "version": "2.0.0",
+  "description": "Convert Markdown documents (2 built-in print themes: classic and paper, YAML frontmatter, Mermaid diagrams, KaTeX math, tables, Thai/Unicode text, and local images) into verified print-ready PDFs using the standalone mdtopdf CLI.",
   "repository": "https://github.com/DelMiiYa/mdtopdf-skill",
   "suggestedPrompts": [
-    "Convert README.md to a print-ready PDF using the tech-spec theme and verify layout with --strict",
+    "Convert README.md to a print-ready PDF using the paper theme and verify layout with --strict",
     "Export docs/report.md with YAML frontmatter, Mermaid diagrams, and KaTeX equations to PDF",
     "Render my Thai Markdown notes to PDF with preview PNGs and inspect for layout issues"
   ]

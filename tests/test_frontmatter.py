@@ -54,15 +54,15 @@ from mdtopdf_skill.models import (
 
 
 def _mock_themes() -> dict[str, ThemeSpec]:
-    """Create mock ThemeSpec presets without importing Phase 2A themes.py."""
+    """Create mock ThemeSpec presets without importing themes.py."""
     return {
-        "office": ThemeSpec(
-            name="office",
-            description="Corporate memos, business reports, and SOPs",
+        "classic": ThemeSpec(
+            name="classic",
+            description="Clean sans-serif layout for general documents and reports",
             font_size_pt=9.5,
             line_height=1.45,
-            margin_css="15mm 16mm",
-            accent_color="#0f3d7a",
+            margin_css="12mm 14mm",
+            accent_color="#0d47a1",
             page_numbers=True,
             font_family="sans-serif",
             mono_family="monospace",
@@ -77,18 +77,6 @@ def _mock_themes() -> dict[str, ThemeSpec]:
             accent_color="#1e293b",
             page_numbers=True,
             font_family="serif",
-            mono_family="monospace",
-            is_default=False,
-        ),
-        "classic": ThemeSpec(
-            name="classic",
-            description="Backward-compatible v0.2.0 look",
-            font_size_pt=9.5,
-            line_height=1.45,
-            margin_css="12mm 14mm",
-            accent_color="#0d47a1",
-            page_numbers=False,
-            font_family="sans-serif",
             mono_family="monospace",
             is_default=False,
         ),
@@ -192,25 +180,19 @@ class TestFrontmatterMalformedYaml:
 
 
 class TestFrontmatterKeysAndAliases:
-    """Verify all 25 FrontmatterData fields, aliases, collision order, and unknown keys."""
+    """Verify all 19 FrontmatterData fields, aliases, collision order, and unknown keys."""
 
-    def test_all_25_fields_parsed_together(self) -> None:
+    def test_all_19_fields_parsed_together(self) -> None:
         md = (
             "---\n"
-            "theme: tech-spec\n"
+            "theme: paper\n"
             "lang: en-US\n"
             "title: Architecture Spec\n"
             "subtitle: Core Contracts\n"
             "author: Jane Doe\n"
             "date: 2026-11-19\n"
-            "course: CS101\n"
-            "instructor: Dr. Smith\n"
-            "student: Alex\n"
             "affiliation: Thai Lab\n"
             "abstract: Short summary.\n"
-            "status: Draft\n"
-            "version: 1.0\n"
-            "owner: Platform Team\n"
             "font_size: 10.5\n"
             "line_height: 1.5\n"
             "spacing_scale: 0.9\n"
@@ -228,20 +210,14 @@ class TestFrontmatterKeysAndAliases:
         fm, body = parse_frontmatter(md)
         assert fm.warnings == []
         assert body == "# Body\n"
-        assert fm.theme == "tech-spec"
+        assert fm.theme == "paper"
         assert fm.lang == "en-US"
         assert fm.title == "Architecture Spec"
         assert fm.subtitle == "Core Contracts"
         assert fm.author == "Jane Doe"
         assert fm.date == "2026-11-19"
-        assert fm.course == "CS101"
-        assert fm.instructor == "Dr. Smith"
-        assert fm.student == "Alex"
         assert fm.affiliation == "Thai Lab"
         assert fm.abstract == "Short summary."
-        assert fm.status == "Draft"
-        assert fm.version == "1.0"
-        assert fm.owner == "Platform Team"
         assert math.isclose(fm.font_size_pt or 0.0, 10.5)
         assert math.isclose(fm.line_height or 0.0, 1.5)
         assert math.isclose(fm.spacing_scale or 0.0, 0.9)
@@ -253,6 +229,24 @@ class TestFrontmatterKeysAndAliases:
         assert fm.footer == "Confidential"
         assert fm.toc is True
         assert fm.css == "body { color: #111; }"
+
+    def test_removed_legacy_metadata_keys_ignored_without_warnings(self) -> None:
+        md = (
+            "---\n"
+            "course: CS101\n"
+            "instructor: Dr. Smith\n"
+            "student: Alex\n"
+            "status: Draft\n"
+            "version: 1.0\n"
+            "owner: Platform Team\n"
+            "title: Clean Title\n"
+            "---\n"
+            "# Body\n"
+        )
+        fm, body = parse_frontmatter(md)
+        assert fm.warnings == []
+        assert fm.title == "Clean Title"
+        assert body == "# Body\n"
 
     @pytest.mark.parametrize(
         ("yaml_line", "attr", "expected"),
@@ -321,23 +315,23 @@ class TestFrontmatterKeysAndAliases:
 class TestFrontmatterTypeCoercionAndValidation:
     """Verify PyYAML type coercion, boundary validation, and warning generation."""
 
-    def test_date_and_version_coercion(self) -> None:
-        md = "---\ndate: 2026-11-19\nversion: 1.0\n---\n"
+    def test_date_and_scalar_metadata_coercion(self) -> None:
+        md = "---\ndate: 2026-11-19\ntitle: 1.0\n---\n"
         fm, _ = parse_frontmatter(md)
         assert fm.warnings == []
         assert fm.date == "2026-11-19"
-        assert fm.version == "1.0"
+        assert fm.title == "1.0"
 
-        md_dt = "---\ndate: 2026-11-19T10:20:30Z\nversion: 2\n---\n"
+        md_dt = "---\ndate: 2026-11-19T10:20:30Z\nsubtitle: 2\n---\n"
         fm_dt, _ = parse_frontmatter(md_dt)
         assert fm_dt.warnings == []
         assert fm_dt.date == "2026-11-19T10:20:30+00:00"
-        assert fm_dt.version == "2"
+        assert fm_dt.subtitle == "2"
 
-        md_bad = "---\ndate: true\nversion: .nan\nauthor: [a, b]\n---\n"
+        md_bad = "---\ndate: true\ntitle: .nan\nauthor: [a, b]\n---\n"
         fm_bad, _ = parse_frontmatter(md_bad)
         assert fm_bad.date is None
-        assert fm_bad.version is None
+        assert fm_bad.title is None
         assert fm_bad.author is None
         assert len(fm_bad.warnings) == 3
 
@@ -382,13 +376,10 @@ class TestFrontmatterTypeCoercionAndValidation:
     @pytest.mark.parametrize(
         ("raw_theme", "expected"),
         [
-            ("office", "office"),
-            ("Student", "student"),
-            ("PAPER", "paper"),
-            ("tech-spec", "tech-spec"),
-            ("Executive", "executive"),
-            ("minimal", "minimal"),
             ("classic", "classic"),
+            ("Classic", "classic"),
+            ("paper", "paper"),
+            ("PAPER", "paper"),
         ],
     )
     def test_valid_themes_case_insensitive(self, raw_theme: str, expected: str) -> None:
@@ -396,7 +387,10 @@ class TestFrontmatterTypeCoercionAndValidation:
         assert fm.theme == expected
         assert fm.warnings == []
 
-    @pytest.mark.parametrize("bad_theme", ["neon", "123", "off"])
+    @pytest.mark.parametrize(
+        "bad_theme",
+        ["office", "student", "tech-spec", "executive", "minimal", "neon", "123", "off"],
+    )
     def test_invalid_theme_emits_warning(self, bad_theme: str) -> None:
         fm, _ = parse_frontmatter(f"---\ntheme: {bad_theme}\n---\n")
         assert fm.theme is None
@@ -481,9 +475,9 @@ class TestFrontmatterTypeCoercionAndValidation:
     def test_large_yaml_integers_do_not_crash(self) -> None:
         digits_350 = "9" * 350
         fm_meta, body_meta = parse_frontmatter(
-            f"---\nversion: {digits_350}\ntitle: {digits_350}\n---\nBody\n"
+            f"---\nsubtitle: {digits_350}\ntitle: {digits_350}\n---\nBody\n"
         )
-        assert fm_meta.version == digits_350
+        assert fm_meta.subtitle == digits_350
         assert fm_meta.title == digits_350
         assert fm_meta.warnings == []
         assert body_meta == "Body\n"
@@ -504,18 +498,18 @@ class TestFrontmatterTypeCoercionAndValidation:
         assert body_floats == "Body\n"
 
         digits_4400 = "9" * 4400
-        raw_4400 = f"---\nversion: {digits_4400}\n---\nBody\n"
+        raw_4400 = f"---\ntitle: {digits_4400}\n---\nBody\n"
         fm_4400, body_4400 = parse_frontmatter(raw_4400)
-        assert fm_4400.version is None
+        assert fm_4400.title is None
         assert len(fm_4400.warnings) == 1
         assert fm_4400.warnings[0].startswith("frontmatter_invalid:")
         assert body_4400 == raw_4400
 
         hex_4400 = "0x" + ("f" * 3700)
         fm_hex, body_hex = parse_frontmatter(
-            f"---\nversion: {hex_4400}\nfont_size: {hex_4400}\n---\nBody\n"
+            f"---\ntitle: {hex_4400}\nfont_size: {hex_4400}\n---\nBody\n"
         )
-        assert fm_hex.version is None
+        assert fm_hex.title is None
         assert fm_hex.font_size_pt is None
         assert len(fm_hex.warnings) == 2
         assert all(w.startswith("frontmatter_invalid_field:") for w in fm_hex.warnings)
@@ -559,18 +553,16 @@ class TestExitCodesAndPresets:
     """Verify pinned exit codes, presets, theme names, and package exports."""
 
     def test_exit_codes_and_package_version(self) -> None:
-        assert mdtopdf_skill.__version__ == "1.0.0"
+        assert mdtopdf_skill.__version__ == "2.0.0"
         assert EXIT_OK == 0
         assert EXIT_BAD_ARGS == 2
         assert EXIT_NO_BROWSER == 3
         assert EXIT_RENDER_ERROR == 4
         assert EXIT_EMPTY_PDF == 5
         assert EXIT_STRICT_ISSUE == 6
-        assert DEFAULT_THEME == "office"
+        assert DEFAULT_THEME == "classic"
         assert DEFAULT_LANG == "th"
-        expected_themes = frozenset(
-            {"office", "student", "paper", "tech-spec", "executive", "minimal", "classic"}
-        )
+        expected_themes = frozenset({"classic", "paper"})
         assert expected_themes == THEME_NAMES
 
     def test_margin_and_page_size_presets(self) -> None:
@@ -658,10 +650,10 @@ class TestModelsDataclassesAndToDict:
         assert fm2.warnings == []
 
         res1 = ConversionResult(
-            output_pdf_path="a.pdf", theme="office", page_count=1, embedded_images=0
+            output_pdf_path="a.pdf", theme="classic", page_count=1, embedded_images=0
         )
         res2 = ConversionResult(
-            output_pdf_path="b.pdf", theme="office", page_count=1, embedded_images=0
+            output_pdf_path="b.pdf", theme="classic", page_count=1, embedded_images=0
         )
         res1.suppressed_images.append("missing.png")
         assert res2.suppressed_images == []
@@ -670,7 +662,9 @@ class TestModelsDataclassesAndToDict:
         assert outcome.layout_issues == []
 
         opts = ConversionOptions()
-        assert opts.theme == "office"
+        assert opts.theme == "classic"
+        assert opts.margin_css == "12mm 14mm"
+        assert opts.accent_color == "#0d47a1"
         assert opts.lang == "th"
         assert opts.page_numbers is True
         assert opts.preview_dpi == 144
@@ -687,7 +681,9 @@ class TestModelsValidatorsAndGeometry:
         assert validate_lang(" en-US ") == "en-US"
         assert validate_accent_color(" #0f3d7a ") == "#0f3d7a"
         assert resolve_theme_name(" PAPER ") == "paper"
-        assert resolve_theme_name("Custom", themes={"custom": _mock_themes()["office"]}) == "custom"
+        assert resolve_theme_name("Custom", themes={"custom": _mock_themes()["classic"]}) == (
+            "custom"
+        )
 
         invalid_calls: list[Callable[[], object]] = [
             lambda: validate_finite_float(True, "x", 0.0, 10.0),
@@ -812,18 +808,19 @@ class TestResolveEffectiveOptionsPrecedence:
     def test_global_defaults_and_theme_layer(self) -> None:
         themes = _mock_themes()
         opts_default = resolve_effective_options(themes=themes)
-        assert opts_default.theme == "office"
+        assert opts_default.theme == "classic"
         assert opts_default.lang == "th"
         assert opts_default.font_size_pt == 9.5
-        assert opts_default.margin_css == "15mm 16mm"
+        assert opts_default.margin_css == "12mm 14mm"
+        assert opts_default.accent_color == "#0d47a1"
         assert opts_default.page_numbers is True
         assert opts_default.title == DEFAULT_TITLE
 
-        opts_classic = resolve_effective_options(themes=themes, theme="classic")
-        assert opts_classic.theme == "classic"
-        assert opts_classic.margin_css == "12mm 14mm"
-        assert opts_classic.accent_color == "#0d47a1"
-        assert opts_classic.page_numbers is False
+        opts_paper = resolve_effective_options(themes=themes, theme="paper")
+        assert opts_paper.theme == "paper"
+        assert opts_paper.margin_css == "18mm 20mm"
+        assert opts_paper.accent_color == "#1e293b"
+        assert opts_paper.page_numbers is True
 
     def test_frontmatter_overrides_theme_and_cli_overrides_frontmatter(self) -> None:
         themes = _mock_themes()
@@ -936,7 +933,7 @@ class TestResolveEffectiveOptionsPrecedence:
             frontmatter=FrontmatterData(theme="nonexistent"),
             default_title="   ",
         )
-        assert opts_default.theme == "office"
+        assert opts_default.theme == "classic"
         assert opts_default.title == DEFAULT_TITLE
 
 

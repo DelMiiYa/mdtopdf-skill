@@ -1,4 +1,4 @@
-"""Command-line interface for mdtopdf-skill v1.0.0."""
+"""Command-line interface for mdtopdf-skill v2.0.0."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from mdtopdf_skill import __version__
 from mdtopdf_skill.cdp_browser import find_browser_executable
 from mdtopdf_skill.frontmatter import parse_frontmatter
 from mdtopdf_skill.models import (
+    DEFAULT_THEME,
     EXIT_BAD_ARGS,
     EXIT_EMPTY_PDF,
     EXIT_NO_BROWSER,
@@ -139,7 +140,7 @@ def _wrap_validation(func: object, *args: object) -> object:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Construct the CLI ArgumentParser per §4 of handoff/IMPLEMENTATION_PLAN.md."""
+    """Construct the CLI ArgumentParser."""
     theme_choices = ", ".join(THEMES.keys())
     margin_choices = ", ".join(MARGIN_PRESETS.keys())
 
@@ -152,13 +153,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "input",
-        nargs="?",
-        default=None,
         metavar="INPUT.md",
-        help=(
-            "Input Markdown file path, or '-' to read UTF-8 Markdown from stdin "
-            "(required unless --list-themes is passed)."
-        ),
+        help="Input Markdown file path, or '-' to read UTF-8 Markdown from stdin.",
     )
     parser.add_argument(
         "-o",
@@ -180,13 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--theme",
         metavar="NAME",
         default=None,
-        help=f"Print theme ({theme_choices}; overrides frontmatter, default: office).",
-    )
-    parser.add_argument(
-        "--list-themes",
-        action="store_true",
-        default=False,
-        help="List all built-in print themes with descriptions and exit 0.",
+        help=f"Print theme ({theme_choices}; overrides frontmatter, default: {DEFAULT_THEME}).",
     )
     parser.add_argument(
         "--font-size",
@@ -300,7 +290,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-keep-together",
         action="store_true",
         default=False,
-        help="Allow page breaks inside table rows and grouped heading/list blocks.",
+        help="Allow page breaks inside table rows.",
     )
     parser.add_argument(
         "--no-auto-fit",
@@ -381,11 +371,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     if args.accent is not None:
         args.accent = _wrap_validation(validate_accent_color, str(args.accent))
 
-    if not args.list_themes:
-        if args.input is None or not str(args.input).strip():
-            raise CliArgumentError("the following arguments are required: INPUT.md")
-        if args.input == "-" and (args.base_dir is None or not str(args.base_dir).strip()):
-            raise CliArgumentError("--base-dir is required when reading from stdin ('-').")
+    if not str(args.input).strip():
+        raise CliArgumentError("the following arguments are required: INPUT.md")
+    if args.input == "-" and (args.base_dir is None or not str(args.base_dir).strip()):
+        raise CliArgumentError("--base-dir is required when reading from stdin ('-').")
 
     return args
 
@@ -626,31 +615,6 @@ def _validate_preview_dir(
     return str(preview_path)
 
 
-def _run_list_themes(json_mode: bool, quiet_mode: bool) -> int:
-    """Handle --list-themes in JSON or human-readable format."""
-    if json_mode:
-        payload = {
-            "ok": True,
-            "themes": [
-                {
-                    "name": spec.name,
-                    "default": spec.is_default,
-                    "description": spec.description,
-                }
-                for spec in THEMES.values()
-            ],
-            "version": __version__,
-        }
-        print(json.dumps(payload, ensure_ascii=False), file=sys.stdout)
-        return EXIT_OK
-
-    if not quiet_mode:
-        for spec in THEMES.values():
-            marker = " (default)" if spec.is_default else ""
-            print(f"{spec.name:<12} {spec.description}{marker}", file=sys.stdout)
-    return EXIT_OK
-
-
 def _build_strict_error_summary(result: ConversionResult) -> str:
     parts: list[str] = []
     if result.layout_issues:
@@ -702,9 +666,6 @@ def run(args: argparse.Namespace) -> int:
     """Execute the conversion workflow from validated CLI arguments."""
     json_mode = bool(getattr(args, "json", False))
     quiet_mode = bool(getattr(args, "quiet", False))
-
-    if getattr(args, "list_themes", False):
-        return _run_list_themes(json_mode, quiet_mode)
 
     try:
         md_text = _read_markdown_input(str(args.input))

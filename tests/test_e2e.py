@@ -36,9 +36,8 @@ class TestCliEndToEnd:
         out_pdf = tmp_path / "thai_rich.pdf"
         md_content = (
             "---\n"
-            "theme: tech-spec\n"
+            "theme: paper\n"
             "title: รายงานสรุปผลการทดสอบระบบ\n"
-            "status: Approved\n"
             "---\n\n"
             "# รายงานสรุปผลการทดสอบระบบ\n\n"
             "เอกสารนี้ทดสอบการแสดงผลภาษาไทย ตาราง สมการ $E = mc^2$ และแผนภาพ Mermaid\n\n"
@@ -56,7 +55,7 @@ class TestCliEndToEnd:
 
         data = json.loads(capsys.readouterr().out.strip())
         assert data["ok"] is True
-        assert data["theme"] == "tech-spec"
+        assert data["theme"] == "paper"
         assert data["version"] == __version__
         assert "core_version" not in data
         assert data["mermaid_errors"] == []

@@ -85,7 +85,7 @@ class TestArchitectureDecoupling:
             FrontmatterData(title="Doc Title"),
             267.0,
         )
-        assert calls == ["hdr:Doc Title", "css:office:267.0"]
+        assert calls == ["hdr:Doc Title", "css:classic:267.0"]
         assert '<header class="doc-header"><h1>Doc Title</h1></header>' in doc.html
         assert "Body text." in doc.html
         assert doc.html.count("Doc Title") == 2  # <title> + <header>, leading H1 deduplicated
@@ -272,10 +272,10 @@ class TestMarkdownExtensionsAndTransforms:
         doc_empty_toc = _build("Just text.\n", tmp_path, options=ConversionOptions(toc=True))
         assert '<div class="toc">' not in doc_empty_toc.html
 
-    def test_station_block_wrapping_and_toggle(self, tmp_path: Path) -> None:
+    def test_no_legacy_station_block_wrapper(self, tmp_path: Path) -> None:
         md = "### Station 1\n\n- Step 1\n    - Substep 1a\n- Step 2\n"
         doc_wrap = _build(md, tmp_path, options=ConversionOptions(keep_blocks_together=True))
-        assert '<div class="station-block">\n<h3' in doc_wrap.html
+        assert "station-block" not in doc_wrap.html
         assert "Substep 1a" in doc_wrap.html
 
         doc_nowrap = _build(md, tmp_path, options=ConversionOptions(keep_blocks_together=False))
@@ -517,7 +517,6 @@ class TestEdgeCasesAndCoverage:
 
         # Direct helper edge cases: unclosed tags, existing class, lazy css only
         assert "<blockquote" in pipeline_mod._transform_github_alerts("<blockquote>open")
-        assert "<ul>open" in pipeline_mod._wrap_station_blocks("<h3>T</h3><ul>open")
         task_html = pipeline_mod._transform_task_lists('<li class="x">[ ] todo</li>')
         assert 'class="x task-item"' in task_html
 

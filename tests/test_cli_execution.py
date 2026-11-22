@@ -1,4 +1,4 @@
-"""Tests for v1.0.0 CLI execution flow, exit codes (0..6), JSON schemas, and file I/O."""
+"""Tests for v2.0.0 CLI execution flow, exit codes (0..6), JSON schemas, and file I/O."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def mock_successful_render(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         out = Path(output_pdf_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"%PDF-1.4 simulated pdf content")
-        theme_name = options.theme if options is not None else "office"
+        theme_name = options.theme if options is not None else "classic"
         return ConversionResult(
             output_pdf_path=str(out),
             theme=theme_name,
@@ -100,7 +100,7 @@ class TestExitCodes:
         captured = capsys.readouterr()
         assert "Rendered" in captured.out
         assert "2 page(s)" in captured.out
-        assert "[office]" in captured.out
+        assert "[classic]" in captured.out
         assert captured.err == ""
 
         code_q = main([str(dummy_md), "--quiet"])
@@ -114,11 +114,13 @@ class TestExitCodes:
         [
             [],
             ["--unknown-flag"],
+            ["--list-themes"],
             ["--font-size", "nan", "dummy.md"],
             ["--font-size", "100", "dummy.md"],
             ["--line-height", "0.5", "dummy.md"],
             ["--spacing-scale", "3.0", "dummy.md"],
             ["--theme", "unknown-theme", "dummy.md"],
+            ["--theme", "office", "dummy.md"],
             ["--margin", "gibberish", "dummy.md"],
             ["--page-size", "invalid-paper", "dummy.md"],
             ["--accent", "not-a-color", "dummy.md"],
@@ -232,7 +234,7 @@ class TestExitCodes:
             "render_pdf",
             lambda *a, **k: ConversionResult(
                 output_pdf_path=str(out_pdf),
-                theme="office",
+                theme="classic",
                 page_count=0,
                 embedded_images=0,
             ),
@@ -245,7 +247,7 @@ class TestExitCodes:
             "render_pdf",
             lambda *a, **k: ConversionResult(
                 output_pdf_path=str(out_pdf),
-                theme="office",
+                theme="classic",
                 page_count=1,
                 embedded_images=0,
             ),
@@ -265,7 +267,7 @@ class TestExitCodes:
             out_pdf.write_bytes(b"%PDF-1.4 ok")
             return ConversionResult(
                 output_pdf_path=str(out_pdf),
-                theme="office",
+                theme="classic",
                 page_count=1,
                 embedded_images=0,
                 layout_issues=[
@@ -310,8 +312,8 @@ class TestExitCodes:
         assert len(data["adjustments_applied"]) == 1
 
 
-class TestJsonSchemaAndListThemes:
-    """Verify all 4 v1.0.0 JSON schemas and --json flag token disambiguation."""
+class TestJsonSchemas:
+    """Verify all v2.0.0 JSON schemas and --json flag token disambiguation."""
 
     def test_json_success_schema(
         self,
@@ -345,24 +347,11 @@ class TestJsonSchemaAndListThemes:
             "elapsed_seconds",
         }
         assert data["ok"] is True
-        assert data["theme"] == "office"
+        assert data["theme"] == "classic"
         assert data["pages"] == 2
         assert data["embedded_images"] == 1
         assert data["last_page_fill_ratio"] == 0.72
         assert data["version"] == __version__
-
-    def test_list_themes_human_and_json(self, capsys: pytest.CaptureFixture[str]) -> None:
-        assert main(["--list-themes"]) == EXIT_OK
-        out_human = capsys.readouterr().out
-        for name in ("office", "student", "paper", "tech-spec", "executive", "minimal", "classic"):
-            assert name in out_human
-
-        assert main(["--list-themes", "--json"]) == EXIT_OK
-        data = json.loads(capsys.readouterr().out.strip())
-        assert set(data.keys()) == {"ok", "themes", "version"}
-        assert data["ok"] is True
-        assert data["version"] == __version__
-        assert len(data["themes"]) == 7
 
     def test_json_not_triggered_as_value_or_after_double_dash(
         self, capsys: pytest.CaptureFixture[str]
@@ -419,7 +408,7 @@ class TestJsonSchemaAndListThemes:
             "render_pdf",
             lambda *a, **k: ConversionResult(
                 output_pdf_path=str(out_pdf),
-                theme="office",
+                theme="classic",
                 page_count=0,
                 embedded_images=0,
             ),
@@ -491,7 +480,7 @@ class TestCliCssAndStdinAndUnicode:
             "render_pdf",
             lambda *a, **k: ConversionResult(
                 output_pdf_path=str(out_pdf),
-                theme="office",
+                theme="classic",
                 page_count=1,
                 embedded_images=0,
                 suppressed_images=[malicious_img],

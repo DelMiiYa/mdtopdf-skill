@@ -1,4 +1,4 @@
-"""Architecture boundary tests for standalone mdtopdf-skill v1.0.0."""
+"""Architecture boundary tests for standalone mdtopdf-skill v2.0.0."""
 
 from __future__ import annotations
 
