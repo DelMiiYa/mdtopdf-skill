@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import math
+import re
 from pathlib import Path
 
 import pytest
@@ -283,6 +284,17 @@ class TestBuildThemeCss:
         opts_auto = ConversionOptions(theme="classic", keep_blocks_together=False)
         css_auto = build_theme_css(opts_auto, printable_height_mm=250.0)
         assert "tr {\n    break-inside: auto;" in css_auto
+
+    @pytest.mark.parametrize("theme_name", sorted(THEME_NAMES))
+    def test_headings_h1_through_h4_prevent_page_break_inside(self, theme_name: str) -> None:
+        opts = resolve_effective_options(theme=theme_name, themes=THEMES)
+        css = build_theme_css(opts, printable_height_mm=267.0)
+        for tag in ("h1", "h2", "h3", "h4"):
+            match = re.search(rf"(?m)^{tag} \{{([^}}]+)\}}", css)
+            assert match is not None, f"Missing {tag} rule in {theme_name} CSS"
+            block = match.group(1)
+            assert "break-inside: avoid;" in block
+            assert "page-break-inside: avoid;" in block
 
     def test_custom_options_spacing_scale_and_image_limits(self) -> None:
         opts = ConversionOptions(

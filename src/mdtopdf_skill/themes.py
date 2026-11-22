@@ -169,6 +169,8 @@ h1 {{
     margin-bottom: {_sc(8)};
     line-height: 1.25;
     font-weight: 700;
+    break-inside: avoid;
+    page-break-inside: avoid;
 }}
 h2 {{
     font-size: {round(font_pt * 1.22, 1):g}pt;
@@ -177,6 +179,8 @@ h2 {{
     padding-bottom: {_sc(3)};
     margin-top: {_sc(14)};
     margin-bottom: {_sc(6)};
+    break-inside: avoid;
+    page-break-inside: avoid;
     break-after: avoid;
     page-break-after: avoid;
 }}
@@ -186,6 +190,8 @@ h3 {{
     font-style: italic;
     margin-top: {_sc(10)};
     margin-bottom: {_sc(4)};
+    break-inside: avoid;
+    page-break-inside: avoid;
     break-after: avoid;
     page-break-after: avoid;
 }}
@@ -194,6 +200,8 @@ h4 {{
     color: #475569;
     margin-top: {_sc(6)};
     margin-bottom: {_sc(3)};
+    break-inside: avoid;
+    page-break-inside: avoid;
     break-after: avoid;
     page-break-after: avoid;
 }}
@@ -280,6 +288,8 @@ h1 {{
     margin-top: 0;
     margin-bottom: {_sc(6)};
     line-height: 1.25;
+    break-inside: avoid;
+    page-break-inside: avoid;
 }}
 h2 {{
     font-size: {h2_pt:g}pt;
@@ -288,6 +298,8 @@ h2 {{
     padding-bottom: {_sc(3)};
     margin-top: {_sc(12)};
     margin-bottom: {_sc(6)};
+    break-inside: avoid;
+    page-break-inside: avoid;
     break-after: avoid;
     page-break-after: avoid;
 }}
@@ -296,6 +308,8 @@ h3 {{
     color: #1565c0;
     margin-top: {_sc(8)};
     margin-bottom: {_sc(4)};
+    break-inside: avoid;
+    page-break-inside: avoid;
     break-after: avoid;
     page-break-after: avoid;
 }}
@@ -304,6 +318,8 @@ h4 {{
     color: #1e3a8a;
     margin-top: {_sc(6)};
     margin-bottom: {_sc(3)};
+    break-inside: avoid;
+    page-break-inside: avoid;
     break-after: avoid;
     page-break-after: avoid;
 }}

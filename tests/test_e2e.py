@@ -239,3 +239,81 @@ class TestCliEndToEnd:
         assert "$1,234.50" in full_text
         assert "$5 - $10" in full_text
         assert "$5-$10" in full_text
+
+    def test_e2e_multiline_heading_does_not_split_across_pages(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _require_browser()
+
+        filler_sentence = (
+            "Engineering architecture notes covering pagination stability, "
+            "offline vector rendering, typography metrics, and print layout validation "
+            "for multi-page specifications."
+        )
+        long_heading = (
+            "## HEADING_START_ALPHA Comprehensive Multi-Line Architecture Review and "
+            "HEADING_MIDDLE_BETA Verification Protocol for Distributed Printing "
+            "Pipelines Under Tight Boundary Conditions Across Teams HEADING_END_GAMMA"
+        )
+        diagram_block = (
+            "```mermaid\n"
+            "flowchart LR\n"
+            "    N1[Stage 1] --> N2[Stage 2] --> N3[Stage 3]\n"
+            "```"
+        )
+
+        saw_page_1 = False
+        saw_page_2 = False
+        for count in range(18, 26):
+            md_file = tmp_path / f"heading_split_{count}.md"
+            out_pdf = tmp_path / f"heading_split_{count}.pdf"
+            filler = "\n\n".join(
+                f"Paragraph {idx}: {filler_sentence}"
+                for idx in range(1, count + 1)
+            )
+            md_file.write_text(
+                f"# Heading Pagination Check\n\n"
+                f"{filler}\n\n"
+                f"{long_heading}\n\n"
+                f"Lead paragraph introducing the diagram below.\n\n"
+                f"{diagram_block}\n",
+                encoding="utf-8",
+            )
+            code = main([str(md_file), "-o", str(out_pdf), "--no-auto-fit", "--json"])
+            assert code == EXIT_OK
+            data = json.loads(capsys.readouterr().out.strip())
+            assert data["mermaid_errors"] == []
+            assert data["math_errors"] == []
+
+            with pymupdf.open(str(out_pdf)) as doc:  # type: ignore[no-untyped-call]
+                page_texts = [str(page.get_text("text")) for page in doc]
+
+            token_pages: dict[str, list[int]] = {}
+            for token in (
+                "HEADING_START_ALPHA",
+                "HEADING_MIDDLE_BETA",
+                "HEADING_END_GAMMA",
+            ):
+                token_pages[token] = [
+                    idx for idx, text in enumerate(page_texts) if token in text
+                ]
+                assert len(token_pages[token]) == 1, (
+                    f"Missing or duplicated token {token} at count={count}: {token_pages}"
+                )
+
+            pages_set = {pages[0] for pages in token_pages.values()}
+            assert len(pages_set) == 1, (
+                f"Multi-line heading split across pages at count={count}: {token_pages}"
+            )
+            heading_page = next(iter(pages_set))
+            if heading_page == 0:
+                saw_page_1 = True
+            elif heading_page == 1:
+                saw_page_2 = True
+            if saw_page_1 and saw_page_2:
+                break
+
+        assert saw_page_1 and saw_page_2, (
+            f"Sweep did not cross page 1->2 boundary (saw_page_1={saw_page_1}, "
+            f"saw_page_2={saw_page_2})"
+        )
