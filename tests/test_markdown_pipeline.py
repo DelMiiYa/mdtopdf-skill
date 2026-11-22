@@ -155,7 +155,7 @@ class TestMaskingMermaidMathAndCollisions:
         assert "a_1 &amp;&lt; b_2" in doc.html
         assert "E = mc^2" in doc.html
         # Currency & escaped/code/URL dollars remain unmasked
-        assert r"\$x\$" in doc.html
+        assert "Escaped $x$ stays literal." in doc.html
         assert "Costs $5 and $10 or $1,234.50" in doc.html
         assert "Budget $500," in doc.html
         assert 'href="https://example.com/$1/$2"' in doc.html
@@ -192,12 +192,93 @@ class TestMarkdownExtensionsAndTransforms:
             "[^1]: Footnote body.\n"
         )
         doc = _build(md, tmp_path)
-        assert '<th style="text-align: left">Left</th>' in doc.html
-        assert '<th style="text-align: center">Center</th>' in doc.html
-        assert '<th style="text-align: right">Right</th>' in doc.html
+        assert '<th style="text-align:left">Left</th>' in doc.html
+        assert '<th style="text-align:center">Center</th>' in doc.html
+        assert '<th style="text-align:right">Right</th>' in doc.html
         assert '<div class="highlight">' in doc.html
         assert 'class="footnote-ref"' in doc.html
         assert 'id="fn:1"' in doc.html
+
+    def test_commonmark_nested_lists_tight_lists_and_display_math_in_lists(
+        self, tmp_path: Path
+    ) -> None:
+        md = (
+            "Intro paragraph right before tight numbered list:\n"
+            "1. First ordered item\n"
+            "  - Two-space nested bullet\n"
+            "    - Grandchild bullet\n"
+            "2. Tenth-style test\n\n"
+            "10. Two-digit item\n"
+            "  - Two-space child under 10.\n"
+            "   - Three-space child under 10.\n"
+            "    - Four-space child under 10.\n\n"
+            "Tight bullet intro:\n"
+            "- Alpha\n"
+            "  - Nested alpha\n"
+            "- Beta\n\n"
+            "1. Item before math\n"
+            "  $$E = mc^2$$\n"
+            "  - Nested bullet after display math\n"
+            "2. Second item after math\n\n"
+            "1. Multi-line math item\n\n"
+            "   $$\n"
+            "   a^2 + b^2 = c^2\n"
+            "   $$\n\n"
+            "   - Child after multi-line math\n"
+            "2. Continues single ordered list\n\n"
+            "```markdown\n"
+            "1. Code fence stays verbatim\n"
+            "  - Not normalized\n"
+            "```\n\n"
+            "```\n"
+            "1. Plain fence\n"
+            "  - Keep two spaces\n"
+            "```\n"
+        )
+        doc = _build(md, tmp_path)
+        assert doc.has_math is True
+        # Tight lists after paragraphs render as <ol> / <ul> instead of prose
+        assert "<p>Intro paragraph right before tight numbered list:</p>\n<ol>" in doc.html
+        assert "<p>Tight bullet intro:</p>\n<ul>" in doc.html
+        # Two-space nested bullets under 1. and 10. stay nested inside parent <li>
+        assert (
+            "<p>First ordered item</p>\n<ul>\n<li>Two-space nested bullet\n"
+            "<ul>\n<li>Grandchild bullet</li>"
+        ) in doc.html
+        assert (
+            "<p>Two-digit item</p>\n<ul>\n<li>Two-space child under 10.\n"
+            "<ul>\n<li>Three-space child under 10."
+        ) in doc.html
+        # Display math inside list items preserves list continuity into 2.
+        assert '<div class="math-display" data-math-index="0">E = mc^2</div>' in doc.html
+        assert '<div class="math-display" data-math-index="1">a^2 + b^2 = c^2</div>' in doc.html
+        assert "<li>\n<p>Second item after math</p>\n</li>" in doc.html
+        assert "<li>\n<p>Continues single ordered list</p>\n</li>" in doc.html
+        # Fenced code blocks were not mutated by list normalizer (2 spaces kept verbatim)
+        assert '<span class="w">  </span><span class="k">-</span>' in doc.html
+        assert "<pre><code>1. Plain fence\n  - Keep two spaces\n</code></pre>" in doc.html
+
+    def test_strikethrough_dedup_heading_slugs_and_multiline_footnotes(
+        self, tmp_path: Path
+    ) -> None:
+        md = (
+            "# Overview\n\n"
+            "## Repeat\n\n"
+            "## Repeat\n\n"
+            "Deleted ~~old text~~ and inline code `[^1]` ignored.\n\n"
+            "Paragraph with note[^1] and second note[^alpha].\n\n"
+            "[^1]: First line.\n\n"
+            "    Second paragraph in footnote.\n\n"
+            "[^alpha]: Second footnote.\n"
+        )
+        doc = _build(md, tmp_path, options=ConversionOptions(toc=True))
+        assert "<s>old text</s>" in doc.html
+        assert '<h2 id="repeat">Repeat</h2>' in doc.html
+        assert '<h2 id="repeat-1">Repeat</h2>' in doc.html
+        assert "<code>[^1]</code> ignored" in doc.html
+        assert doc.html.count('class="footnote-ref"') == 2
+        assert "Second paragraph in footnote." in doc.html
+        assert 'href="#repeat-1"' in doc.html
 
     def test_github_alerts_all_five_and_consecutive_separation(self, tmp_path: Path) -> None:
         md = (

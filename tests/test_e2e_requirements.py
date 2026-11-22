@@ -224,7 +224,7 @@ class TestPyprojectAndPackaging:
     def test_runtime_and_dev_dependencies(self) -> None:
         config = _load_pyproject()
         runtime_deps = "\n".join(config["project"]["dependencies"]).lower()
-        for pkg in ("markdown", "pymupdf", "pyyaml", "pygments"):
+        for pkg in ("markdown-it-py", "pymupdf", "pyyaml", "pygments"):
             assert pkg in runtime_deps
         assert "pillow" not in runtime_deps
         assert "bandit" not in runtime_deps

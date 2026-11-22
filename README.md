@@ -4,7 +4,7 @@ Standalone headless CLI (`mdtopdf`) and Antigravity skill (`skills/md-to-pdf/SKI
 
 ## Architecture
 
-`mdtopdf-skill` v2.0.0 is completely self-contained (`src/mdtopdf_skill/`) with standard PyPI dependencies (`markdown`, `pymupdf`, `pyyaml`, `pygments`) and bundled offline assets (`mermaid@11.17.2` and `katex@0.19.1` with `.woff2` fonts under `src/mdtopdf_skill/assets/`).
+`mdtopdf-skill` v2.0.0 is completely self-contained (`src/mdtopdf_skill/`) with standard PyPI dependencies (`markdown-it-py`, `pymupdf`, `pyyaml`, `pygments`) and bundled offline assets (`mermaid@11.17.2` and `katex@0.19.1` with `.woff2` fonts under `src/mdtopdf_skill/assets/`).
 
 - **Zero external runtime services or CDN calls:** Mermaid and KaTeX are lazy-injected from local package assets only when diagrams or math appear in the document, protected by a per-render cryptographic CSP `nonce`.
 - **Single-session print-geometry CDP driver (`cdp_browser.py` + `autofit.py`):** Emulates `print` media at exact printable page dimensions, detects/remediates table overflows and trailing orphan pages in-session, captures Mermaid/KaTeX errors, and optionally exports 144 DPI preview PNGs.

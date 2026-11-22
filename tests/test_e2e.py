@@ -125,3 +125,39 @@ class TestCliEndToEnd:
         assert data["ok"] is True
         assert "does_not_exist_image_xyz.png" in data["suppressed_images"]
         assert data["pages"] >= 1
+
+    def test_e2e_commonmark_nested_lists_tight_lists_and_math_in_list(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _require_browser()
+
+        md_file = tmp_path / "commonmark_lists.md"
+        out_pdf = tmp_path / "commonmark_lists.pdf"
+        md_file.write_text(
+            "# CommonMark List Continuity\n\n"
+            "Intro paragraph immediately before tight list:\n"
+            "1. Parent ordered item\n"
+            "  - Two-space nested sub-bullet\n"
+            "   - Three-space nested sub-bullet\n"
+            "2. Item containing display math\n"
+            "  $$x^2 + y^2 = z^2$$\n"
+            "  - Sub-bullet after display math\n"
+            "3. Final ordered item\n\n"
+            "## Two-Digit List\n\n"
+            "10. Double-digit item\n"
+            "  - Nested child under ten\n",
+            encoding="utf-8",
+        )
+
+        code = main([str(md_file), "-o", str(out_pdf), "--strict", "--json"])
+        assert code == EXIT_OK
+        data = json.loads(capsys.readouterr().out.strip())
+        assert data["math_errors"] == []
+        assert data["layout_issues"] == []
+
+        with pymupdf.open(str(out_pdf)) as doc:  # type: ignore[no-untyped-call]
+            full_text = "\n".join(str(p.get_text("text")) for p in doc)
+        assert "1. Parent ordered item" in full_text
+        assert "2. Item containing display math" in full_text
+        assert "3. Final ordered item" in full_text
+        assert "10. Double-digit item" in full_text

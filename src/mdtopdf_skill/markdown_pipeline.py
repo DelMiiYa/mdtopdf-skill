@@ -5,11 +5,20 @@ from __future__ import annotations
 import html
 import re
 import secrets
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
 from urllib.parse import unquote, urlparse
 
-import markdown
+from markdown_it import MarkdownIt
+from markdown_it.common.utils import escapeHtml, unescapeAll
+from markdown_it.renderer import RendererHTML
+from markdown_it.token import Token
+from markdown_it.utils import EnvType, OptionsDict
+from pygments import highlight as pygments_highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import get_lexer_by_name
+from pygments.util import ClassNotFound
 
 from mdtopdf_skill.models import DEFAULT_LANG, ConversionOptions, FrontmatterData
 from mdtopdf_skill.sanitizer import (
@@ -66,6 +75,23 @@ _WIN_SLASH_DRIVE_RE = re.compile(r"^/([A-Za-z])[:|]/(.*)$")
 _WIN_DRIVE_REL_RE = re.compile(r"^[A-Za-z]:(?![\\/])")
 _WIN_DRIVE_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 _LOCAL_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]{1,}):")
+
+_LIST_ITEM_RE = re.compile(r"^([ ]*)((?:[-*+])|(?:\d{1,9}[.)]))([ \t]+)(.*)$")
+_THEMATIC_BREAK_RE = re.compile(
+    r"^[ ]*(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$"
+)
+_ANY_FENCE_RE = re.compile(r"^([ ]*)(`{3,}|~{3,})([^\n]*)$")
+_LIST_MARKER_PREFIX_RE = re.compile(r"^([ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+)")
+_BLOCK_INTERRUPT_RE = re.compile(r"^[ ]{0,3}(?:#{1,6}(?:[ \t]|$)|>)")
+
+_FOOTNOTE_DEF_RE = re.compile(r"^[ ]{0,3}\[\^([^\s\]]+)\]:[ \t]*(.*)$")
+_FOOTNOTE_REF_RE = re.compile(r"\[\^([^\s\]]+)\](?!\()")
+
+_HEADING_TAG_RE = re.compile(r"<h([1-6])([^>]*)>([\s\S]*?)</h\1>", flags=re.IGNORECASE)
+_ID_ATTR_RE = re.compile(r"""\bid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""", flags=re.IGNORECASE)
+_TOC_PARAGRAPH_RE = re.compile(r"<p>\s*\[TOC\]\s*</p>")
+
+_HIGHLIGHT_FORMATTER = HtmlFormatter(cssclass="highlight")
 
 
 @dataclass(frozen=True)
@@ -239,7 +265,7 @@ def _find_matching_bracket(text: str, open_bracket_idx: int) -> int:
 
 
 def _parse_markdown_link_dest(
-    text: str, open_paren_idx: int
+    text: str, open_paren_idx: int, *, allow_spaces: bool = False
 ) -> tuple[str, str, int] | None:
     """Parse `(dest [title])` starting at '('; return (raw_src, optional_title_tail, end_idx)."""
     n = len(text)
@@ -253,7 +279,8 @@ def _parse_markdown_link_dest(
     if i >= n:
         return None
 
-    if text[i] == "<":
+    starts_with_angle = text[i] == "<"
+    if starts_with_angle:
         i += 1
         dest_start = i
         while i < n:
@@ -316,6 +343,25 @@ def _parse_markdown_link_dest(
         if i < n and text[i] == ")":
             return (raw_src, text[tail_start:i], i + 1)
 
+    if allow_spaces and not starts_with_angle:
+        k = dest_start
+        paren_depth = 0
+        while k < n:
+            ch = text[k]
+            if ch == "\\" and k + 1 < n:
+                k += 2
+                continue
+            if ch in ("\n", "<", ">", '"', "'"):
+                return None
+            if ch == "(":
+                paren_depth += 1
+            elif ch == ")":
+                if paren_depth == 0:
+                    spaced_src = text[dest_start:k].rstrip(" \t")
+                    return (spaced_src, "", k + 1) if spaced_src else None
+                paren_depth -= 1
+            k += 1
+
     return None
 
 
@@ -333,7 +379,9 @@ def _resolve_markdown_images(
         if text[i] == "!" and i + 1 < n and text[i + 1] == "[" and not _is_escaped(text, i):
             close_br = _find_matching_bracket(text, i + 1)
             if close_br != -1 and close_br + 1 < n and text[close_br + 1] == "(":
-                parsed_dest = _parse_markdown_link_dest(text, close_br + 1)
+                parsed_dest = _parse_markdown_link_dest(
+                    text, close_br + 1, allow_spaces=True
+                )
                 if parsed_dest is not None:
                     raw_src, tail, end_idx = parsed_dest
                     alt_text = text[i + 2 : close_br]
@@ -399,6 +447,130 @@ def _mask_links_and_images_for_math(
     return "".join(out)
 
 
+def _normalize_ordered_list_indents(text: str) -> str:
+    """Align 2/3-space nested sub-items and continuations to parent list content columns."""
+    lines = text.split("\n")
+    out: list[str] = []
+    # Stack entries: (orig_indent, out_indent, out_content_col, shift)
+    stack: list[tuple[int, int, int, int]] = []
+    in_fence: tuple[str, int, int] | None = None
+    prev_blank = False
+
+    for line in lines:
+        if in_fence is not None:
+            f_char, f_len, f_shift = in_fence
+            out.append((" " * f_shift) + line if f_shift > 0 and line.strip() else line)
+            if re.match(rf"^[ ]*{re.escape(f_char)}{{{f_len},}}[ \t]*$", line):
+                in_fence = None
+            prev_blank = False
+            continue
+
+        if not line.strip():
+            out.append(line)
+            prev_blank = True
+            continue
+
+        # Normalize leading tabs on non-fence lines to CommonMark 4-space tab stops.
+        ws_len = len(line) - len(line.lstrip(" \t"))
+        lead_spaces = line[:ws_len].expandtabs(4)
+        norm_line = lead_spaces + line[ws_len:]
+        orig_indent = len(lead_spaces)
+        stripped_lead = norm_line[orig_indent:]
+
+        fence_m = _ANY_FENCE_RE.match(norm_line)
+        if fence_m is not None and not (
+            fence_m.group(2)[0] == "`" and "`" in fence_m.group(3)
+        ):
+            while stack and orig_indent <= stack[-1][0]:
+                stack.pop()
+            applied_shift = 0
+            if stack:
+                _, _, p_content_col, p_shift = stack[-1]
+                cand = orig_indent + p_shift
+                applied_shift = (
+                    p_content_col - orig_indent if cand < p_content_col else p_shift
+                )
+            out.append((" " * applied_shift) + norm_line)
+            in_fence = (fence_m.group(2)[0], len(fence_m.group(2)), applied_shift)
+            prev_blank = False
+            continue
+
+        is_thematic = _THEMATIC_BREAK_RE.match(norm_line) is not None
+        list_m = None if is_thematic else _LIST_ITEM_RE.match(norm_line)
+
+        if list_m is not None:
+            marker = list_m.group(2)
+            sep = list_m.group(3)
+            rest = list_m.group(4)
+            while stack and orig_indent <= stack[-1][0]:
+                stack.pop()
+            if stack:
+                _, _, p_content_col, p_shift = stack[-1]
+                out_indent = max(orig_indent + p_shift, p_content_col)
+            else:
+                out_indent = orig_indent
+            shift = out_indent - orig_indent
+            sep_width = len(sep.expandtabs(4))
+            out_content_col = out_indent + len(marker) + sep_width
+            stack.append((orig_indent, out_indent, out_content_col, shift))
+            out.append((" " * out_indent) + marker + sep + rest)
+            prev_blank = False
+            continue
+
+        if prev_blank or is_thematic or _BLOCK_INTERRUPT_RE.match(norm_line) is not None:
+            while stack and orig_indent <= stack[-1][0]:
+                stack.pop()
+
+        if stack and orig_indent > stack[-1][0]:
+            _, _, p_content_col, p_shift = stack[-1]
+            out_indent = max(orig_indent + p_shift, p_content_col)
+            out.append((" " * out_indent) + stripped_lead)
+        else:
+            out.append(line)
+        prev_blank = False
+
+    return "\n".join(out)
+
+
+def _format_display_math_replacement(
+    masked: str,
+    open_pos: int,
+    close_pos: int,
+    token: str,
+) -> str:
+    """Format a masked display math token while preserving list/blockquote indentation."""
+    line_start = masked.rfind("\n", 0, open_pos) + 1
+    line_prefix = masked[line_start:open_pos]
+
+    after_close = close_pos + 2
+    next_nl = masked.find("\n", after_close)
+    line_tail = masked[after_close:] if next_nl == -1 else masked[after_close:next_nl]
+    has_trailing_content = bool(line_tail.strip(" \t"))
+
+    if re.match(r"^[ \t]*>", line_prefix):
+        return token
+
+    if line_prefix and not line_prefix.strip(" \t"):
+        suffix = f"\n\n{line_prefix}" if has_trailing_content else "\n\n"
+        return f"\n\n{line_prefix}{token}{suffix}"
+
+    marker_match = _LIST_MARKER_PREFIX_RE.match(line_prefix)
+    if marker_match is not None:
+        indent = " " * len(marker_match.group(1).expandtabs(4))
+        suffix = f"\n\n{indent}" if has_trailing_content else "\n\n"
+        if line_prefix == marker_match.group(1):
+            return f"{token}{suffix}"
+        return f"\n\n{indent}{token}{suffix}"
+
+    lead_ws_len = len(line_prefix) - len(line_prefix.lstrip(" \t"))
+    if lead_ws_len > 0:
+        indent = " " * len(line_prefix[:lead_ws_len].expandtabs(4))
+        suffix = f"\n\n{indent}" if has_trailing_content else "\n\n"
+        return f"\n\n{indent}{token}{suffix}"
+
+    return f"\n\n{token}\n\n"
+
+
 def _mask_math_spans(
     text: str,
     temp_prefix: str,
@@ -437,12 +609,9 @@ def _mask_math_spans(
                     idx = len(math_spans)
                     math_spans.append((inner.strip(), True))
                     token = f"{math_prefix}{idx}END"
-                    line_start = masked.rfind("\n", 0, i) + 1
-                    line_prefix = masked[line_start:i]
-                    if re.match(r"^[ \t]*>", line_prefix):
-                        out_display.append(token)
-                    else:
-                        out_display.append(f"\n\n{token}\n\n")
+                    out_display.append(
+                        _format_display_math_replacement(masked, i, close_pos, token)
+                    )
                     i = close_pos + 2
                     continue
         out_display.append(masked[i])
@@ -811,6 +980,265 @@ def _resolve_frontmatter_css(
     return sanitize_css(stripped, base_dir, options.allow_outside_base_dir)
 
 
+def _highlight_code_block(code: str, lang: str, _attrs: str) -> str:
+    """Highlight fenced code blocks with Pygments when an explicit language is given."""
+    lang_name = lang.strip()
+    if not lang_name:
+        return ""
+    try:
+        lexer = get_lexer_by_name(lang_name, stripall=False)
+    except ClassNotFound:
+        return ""
+    return str(pygments_highlight(code, lexer, _HIGHLIGHT_FORMATTER))
+
+
+class _PdfMarkdownIt(MarkdownIt):
+    """MarkdownIt subclass permitting resolved local `file:///` and `data:image/*` URIs."""
+
+    def validateLink(self, url: str) -> bool:
+        """Allow local file:/// and data:image/* URIs; sanitizer.py enforces containment."""
+        lowered = url.strip().lower()
+        if lowered.startswith(("file:///", "data:image/")):
+            return True
+        return bool(super().validateLink(url))
+
+
+def _build_markdown_parser() -> MarkdownIt:
+    """Construct CommonMark parser with GFM tables/strikethrough and Pygments fences."""
+    md = _PdfMarkdownIt("commonmark", {"html": True, "highlight": _highlight_code_block}).enable(
+        ["table", "strikethrough"]
+    )
+
+    def _render_fence(
+        renderer: RendererHTML,
+        tokens: Sequence[Token],
+        idx: int,
+        options: OptionsDict,
+        env: EnvType,
+    ) -> str:
+        _ = env
+        token = tokens[idx]
+        info = unescapeAll(token.info).strip() if token.info else ""
+        lang_name = info.split(None, 1)[0] if info else ""
+        lang_attrs = info[len(lang_name) :].lstrip() if info and len(info) > len(lang_name) else ""
+
+        highlighted = ""
+        if options.highlight is not None:
+            highlighted = options.highlight(token.content, lang_name, lang_attrs) or ""
+
+        if highlighted.startswith(('<div class="highlight"', "<pre")):
+            return highlighted if highlighted.endswith("\n") else highlighted + "\n"
+
+        code_body = highlighted or escapeHtml(token.content)
+        if info:
+            tmp_token = Token(type="", tag="", nesting=0, attrs=token.attrs.copy())
+            tmp_token.attrJoin("class", options.langPrefix + lang_name)
+            attrs_html = renderer.renderAttrs(tmp_token)
+        else:
+            attrs_html = renderer.renderAttrs(token)
+        return f"<pre><code{attrs_html}>{code_body}</code></pre>\n"
+
+    md.add_render_rule("fence", _render_fence)
+    return md
+
+
+def _strip_one_indent_level(line: str) -> str:
+    """Strip one Markdown continuation indent (1 tab or up to 4 spaces)."""
+    if line.startswith("\t"):
+        return line[1:]
+    spaces = 0
+    while spaces < 4 and spaces < len(line) and line[spaces] == " ":
+        spaces += 1
+    return line[spaces:]
+
+
+def _extract_footnotes(
+    text: str, fn_prefix: str
+) -> tuple[str, dict[str, str], list[tuple[str, str, int, str]]]:
+    """Extract `[^id]: ...` definitions and mask `[^id]` references in order of appearance."""
+    lines = text.split("\n")
+    kept_lines: list[str] = []
+    defs: dict[str, str] = {}
+    i = 0
+    n = len(lines)
+
+    while i < n:
+        match = _FOOTNOTE_DEF_RE.match(lines[i])
+        if match is None:
+            kept_lines.append(lines[i])
+            i += 1
+            continue
+
+        fn_id = match.group(1)
+        body_lines = [match.group(2)]
+        j = i + 1
+        while j < n:
+            nxt = lines[j]
+            if not nxt.strip():
+                k = j + 1
+                while k < n and not lines[k].strip():
+                    k += 1
+                if k < n and (lines[k].startswith("    ") or lines[k].startswith("\t")):
+                    while j < k:
+                        body_lines.append("")
+                        j += 1
+                    continue
+                break
+            if nxt.startswith("    ") or nxt.startswith("\t"):
+                body_lines.append(_strip_one_indent_level(nxt))
+                j += 1
+                continue
+            break
+
+        if fn_id not in defs:
+            defs[fn_id] = "\n".join(body_lines).strip()
+        i = j
+
+    body_text = "\n".join(kept_lines)
+    if not defs:
+        return (body_text, {}, [])
+
+    # Record order of first reference and replace references with tokens
+    ref_tokens: dict[str, str] = {}
+    used_order: list[tuple[str, str, int, str]] = []
+
+    def _replace_ref(m: re.Match[str]) -> str:
+        if _is_escaped(body_text, m.start()):
+            return m.group(0)
+        fn_id = m.group(1)
+        if fn_id not in defs:
+            return m.group(0)
+        if fn_id not in ref_tokens:
+            num = len(used_order) + 1
+            safe_slug = re.sub(r"[^A-Za-z0-9_.:-]+", "-", fn_id).strip("-") or f"n{num}"
+            token = f"{fn_prefix}{num - 1}END"
+            ref_tokens[fn_id] = token
+            used_order.append((fn_id, safe_slug, num, token))
+        return ref_tokens[fn_id]
+
+    masked_body = _FOOTNOTE_REF_RE.sub(_replace_ref, body_text)
+    return (masked_body, defs, used_order)
+
+
+def _render_footnotes(
+    html_body: str,
+    defs: dict[str, str],
+    used_order: list[tuple[str, str, int, str]],
+    code_masks: dict[str, str],
+    md: MarkdownIt,
+) -> str:
+    """Substitute footnote tokens with superscript links and append `.footnote` list."""
+    if not used_order:
+        return html_body
+
+    result = html_body
+    fn_items: list[str] = []
+    for fn_id, safe_slug, num, token in used_order:
+        sup_html = (
+            f'<sup id="fnref:{safe_slug}">'
+            f'<a class="footnote-ref" href="#fn:{safe_slug}">{num}</a></sup>'
+        )
+        result = result.replace(token, sup_html)
+
+        raw_fn_md = defs[fn_id]
+        for code_tok, original in reversed(list(code_masks.items())):
+            raw_fn_md = raw_fn_md.replace(code_tok, original)
+
+        rendered_fn = md.render(raw_fn_md).strip()
+        backref = (
+            f'&#160;<a class="footnote-backref" href="#fnref:{safe_slug}" '
+            f'title="Jump back to footnote {num} in the text">&#8617;</a>'
+        )
+        if rendered_fn.endswith("</p>"):
+            rendered_fn = rendered_fn[:-4] + backref + "</p>"
+        else:
+            rendered_fn = rendered_fn + backref
+        fn_items.append(f'<li id="fn:{safe_slug}">{rendered_fn}</li>')
+
+    footnote_section = (
+        '<div class="footnote">\n'
+        "<hr />\n"
+        "<ol>\n"
+        + "\n".join(fn_items)
+        + "\n</ol>\n"
+        "</div>"
+    )
+    return f"{result}\n{footnote_section}"
+
+
+def _slugify_heading(label: str, used_slugs: set[str]) -> str:
+    """Create a unique URL-safe heading slug matching Unicode/ASCII headings."""
+    cleaned = re.sub(r"[^\w\s-]", "", label.lower())
+    base = re.sub(r"[-\s]+", "-", cleaned).strip("-") or "section"
+    slug = base
+    suffix = 1
+    while slug in used_slugs:
+        slug = f"{base}-{suffix}"
+        suffix += 1
+    used_slugs.add(slug)
+    return slug
+
+
+def _build_toc_html(headings: list[tuple[int, str, str]]) -> str:
+    """Render nested `<div class="toc">` HTML from `(level, slug, escaped_label)` entries."""
+    parts: list[str] = ['<div class="toc">', '<span class="toctitle">Table of Contents</span>']
+    level_stack: list[int] = []
+
+    for lvl, slug, escaped_label in headings:
+        if not level_stack or lvl > level_stack[-1]:
+            parts.append("<ul>")
+            level_stack.append(lvl)
+        else:
+            while len(level_stack) > 1 and level_stack[-1] > lvl:
+                parts.append("</li></ul>")
+                level_stack.pop()
+            parts.append("</li>")
+        parts.append(f'<li><a href="#{html.escape(slug, quote=True)}">{escaped_label}</a>')
+
+    while level_stack:
+        parts.append("</li></ul>")
+        level_stack.pop()
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def _apply_heading_ids_and_toc(html_body: str, *, enable_toc: bool) -> str:
+    """Add deduplicated `id` slugs to headings and expand/prepend `.toc` when requested."""
+    used_slugs: set[str] = set()
+    headings: list[tuple[int, str, str]] = []
+
+    def _process_heading(match: re.Match[str]) -> str:
+        level = int(match.group(1))
+        attrs = match.group(2)
+        inner_html = match.group(3)
+        plain = re.sub(r"<[^>]+>", "", inner_html)
+        label = re.sub(r"\s+", " ", html.unescape(plain)).strip()
+
+        id_match = _ID_ATTR_RE.search(attrs)
+        if id_match is not None:
+            existing_id = id_match.group(1) or id_match.group(2) or id_match.group(3) or ""
+            slug = existing_id or _slugify_heading(label, used_slugs)
+            used_slugs.add(slug)
+            new_attrs = attrs
+        else:
+            slug = _slugify_heading(label, used_slugs)
+            new_attrs = f'{attrs} id="{html.escape(slug, quote=True)}"'
+
+        if label:
+            headings.append((level, slug, html.escape(label, quote=False)))
+        return f"<h{level}{new_attrs}>{inner_html}</h{level}>"
+
+    updated_html = _HEADING_TAG_RE.sub(_process_heading, html_body)
+
+    if not enable_toc or not headings:
+        return updated_html
+
+    toc_html = _build_toc_html(headings)
+    if _TOC_PARAGRAPH_RE.search(updated_html):
+        return _TOC_PARAGRAPH_RE.sub(lambda _m: toc_html, updated_html, count=1)
+    return f"{toc_html}\n{updated_html}"
+
+
 def _resolve_theme_parts_lazy(
     options: ConversionOptions,
     fm: FrontmatterData,
@@ -868,6 +1296,7 @@ def build_html_document(
     mermaid_prefix = _make_token_prefix("MDTOPDFMERMAID", text)
     math_prefix = _make_token_prefix("MDTOPDFMATH", text)
     temp_prefix = _make_token_prefix("MDTOPDFTMP", text)
+    fn_prefix = _make_token_prefix("MDTOPDFFN", text)
 
     code_masks: dict[str, str] = {}
     mermaid_blocks: list[str] = []
@@ -877,11 +1306,15 @@ def build_html_document(
     text = _mask_fenced_and_mermaid(text, code_prefix, mermaid_prefix, code_masks, mermaid_blocks)
     text = _mask_inline_code(text, code_prefix, code_masks)
 
+    # Stage 4b: Normalize 2/3-space nested lists under ordered lists to parent content columns
+    text = _normalize_ordered_list_indents(text)
+
     # Stage 5: Resolve Markdown images pre-Markdown (preserving UNC backslashes)
     text = _resolve_markdown_images(text, base_dir, options, suppressed_images)
 
-    # Stage 6: Mask math spans & non-math contexts
+    # Stage 6: Mask math spans & non-math contexts, then extract footnotes
     text = _mask_math_spans(text, temp_prefix, math_prefix, math_spans)
+    text, fn_defs, fn_used = _extract_footnotes(text, fn_prefix)
 
     # Stage 7: Separate consecutive blockquotes, resolve theme outputs, dedup leading H1
     text = _BQ_CONSECUTIVE_RE.sub(r"\1\n<!-- mdtopdf-bq-sep -->\n\n", text)
@@ -899,20 +1332,11 @@ def build_html_document(
     if resolved_header_html:
         text = _deduplicate_leading_h1(text, resolved_dedup)
 
-    # Stage 8: Compile Markdown & insert TOC
-    toc_cfg = {"marker": "[TOC]"} if options.toc else {"marker": ""}
-    md = markdown.Markdown(
-        extensions=["tables", "fenced_code", "codehilite", "footnotes", "toc", "sane_lists"],
-        extension_configs={
-            "codehilite": {"guess_lang": False, "css_class": "highlight"},
-            "toc": toc_cfg,
-        },
-    )
-    html_body = md.convert(text)
-    if options.toc and '<div class="toc">' not in html_body and getattr(md, "toc_tokens", None):
-        toc_html = getattr(md, "toc", "")
-        if toc_html:
-            html_body = f"{toc_html}\n{html_body}"
+    # Stage 8: Compile Markdown with CommonMark/GFM parser, footnotes, heading IDs, and TOC
+    md = _build_markdown_parser()
+    html_body = md.render(text)
+    html_body = _render_footnotes(html_body, fn_defs, fn_used, code_masks, md)
+    html_body = _apply_heading_ids_and_toc(html_body, enable_toc=bool(options.toc))
 
     # Stage 9: Sanitize HTML & resolve remaining HTML <img> tags
     html_body = sanitize_html(html_body)
