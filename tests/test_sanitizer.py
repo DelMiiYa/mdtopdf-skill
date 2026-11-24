@@ -329,11 +329,24 @@ class TestResolveLocalImage:
             None,
         )
 
-    def test_file_uri_windows_slash_drive_normalization(self, tmp_path: Path) -> None:
+    def test_file_uri_windows_slash_drive_normalization(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         allowed, exists, resolved = resolve_local_image(
             "file:///Z|/outside/pic.png", str(tmp_path), allow_outside_base_dir=False
         )
         assert (allowed, exists, resolved) == (False, False, None)
+
+        monkeypatch.setattr("mdtopdf_skill.sanitizer.sys.platform", "linux")
+        assert resolve_local_image(
+            "file:///Z|/outside/pic.png", str(tmp_path), allow_outside_base_dir=False
+        ) == (False, False, None)
+        assert resolve_local_image(
+            "C:/outside/x.png", str(tmp_path), allow_outside_base_dir=False
+        ) == (False, False, None)
+        assert "outside" not in sanitize_css(
+            'a { background: url("C:/outside/x.png"); }', str(tmp_path)
+        )
 
     def test_os_error_during_resolution_returns_blocked(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

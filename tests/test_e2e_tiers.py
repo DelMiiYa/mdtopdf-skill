@@ -286,8 +286,9 @@ def inspect_preview_pngs(preview_dir: Path, expected_pages: int) -> list[tuple[i
             assert img.format == "PNG"
             w, h = img.size
             assert w > 800 and h > 800, f"Unexpectedly small 144 DPI PNG: {(w, h)}"
-            extrema = img.convert("L").getextrema()
-            assert extrema[0] < extrema[1], f"Blank preview PNG detected: {png_path}"
+            min_px, max_px = img.convert("L").getextrema()
+            assert isinstance(min_px, (int, float)) and isinstance(max_px, (int, float))
+            assert min_px < max_px, f"Blank preview PNG detected: {png_path}"
             dimensions.append((w, h))
     return dimensions
 

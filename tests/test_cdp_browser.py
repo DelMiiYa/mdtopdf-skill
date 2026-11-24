@@ -167,9 +167,6 @@ class _LoopbackCdpServer:
                 headers[k.strip().lower()] = v.strip()
         self.handshake_headers = headers
 
-        if self._handler is not None and headers.get("x-custom-handshake") == "1":
-            return headers
-
         ws_key = headers.get("sec-websocket-key", "")
         accept = base64.b64encode(
             hashlib.sha1(
@@ -406,6 +403,7 @@ class TestCdpSessionLifecycleAndFlags:
     """Process launch flags, stderr DevTools parsing, startup timeouts, and cleanup tests."""
 
     def test_launch_flags_and_isolated_temp_dir(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("MDTOPDF_NO_SANDBOX", raising=False)
         with _LoopbackCdpServer() as server:
             proc = _FakeProc(
                 [f"DevTools listening on ws://127.0.0.1:{server.port}{server.ws_path}\n".encode()]
@@ -452,6 +450,7 @@ class TestCdpSessionLifecycleAndFlags:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        monkeypatch.delenv("MDTOPDF_NO_SANDBOX", raising=False)
         with _LoopbackCdpServer() as server:
             proc = _FakeProc(
                 [f"DevTools listening on ws://127.0.0.1:{server.port}{server.ws_path}\n".encode()]
@@ -610,25 +609,7 @@ class TestRfc6455WebSocketProtocol:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # Case 1: Invalid Sec-WebSocket-Accept
-        def _bad_accept(conn: socket.socket, headers: dict[str, str]) -> None:
-            _ = headers
-            conn.sendall(
-                b"HTTP/1.1 101 Switching Protocols\r\n"
-                b"Upgrade: websocket\r\n"
-                b"Connection: Upgrade\r\n"
-                b"Sec-WebSocket-Accept: invalid-accept-value\r\n\r\n"
-            )
-
-        with _LoopbackCdpServer(_bad_accept) as server:
-            server.handshake_headers = {}
-
-            def _raw_bad_accept(conn: socket.socket, headers: dict[str, str]) -> None:
-                _bad_accept(conn, headers)
-
-            _ = _raw_bad_accept
-
-        # Drive directly with custom handshake flag so server doesn't send valid 101 first
+        # Drive directly with custom handshake so server doesn't send valid 101 first
         def _custom_bad_accept_server(accept_line: bytes) -> None:
             srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             srv.bind(("127.0.0.1", 0))
@@ -1328,7 +1309,9 @@ class TestRenderBridgeAssetAndRealBrowserSmoke:
 class TestSecurityAuditCdpContainmentAndCleanup:
     """Regression tests for CDP 127.0.0.1 binding, temp cleanup, and Fetch containment."""
 
-    def test_is_fetch_url_allowed_policy(self, tmp_path: Path) -> None:
+    def test_is_fetch_url_allowed_policy(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         allowed_root = (tmp_path / "work").resolve()
         outside_root = (tmp_path / "secret").resolve()
         allowed_root.mkdir()
@@ -1350,6 +1333,12 @@ class TestSecurityAuditCdpContainmentAndCleanup:
         assert _is_fetch_url_allowed("file://evilhost/share/a.png", roots, False) is False
         assert _is_fetch_url_allowed("file://///evilhost/share/a.png", roots, False) is False
         assert _is_fetch_url_allowed("data:text/html,<script>1</script>", roots, False) is False
+
+        # Windows drive URIs must remain blocked on POSIX even with allow_any_local_file=False
+        monkeypatch.setattr("mdtopdf_skill.cdp_browser.sys.platform", "linux")
+        assert _is_fetch_url_allowed("file:///C:/outside/secret.png", roots, False) is False
+        assert _is_fetch_url_allowed("file:///Z|/outside/secret.png", roots, False) is False
+        monkeypatch.undo()
 
         # allow_any_local_file=True permits local files outside roots, still blocking remote/UNC
         assert _is_fetch_url_allowed(outside_file.as_uri(), roots, True) is True

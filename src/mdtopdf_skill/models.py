@@ -348,6 +348,21 @@ def validate_finite_float(
     return parsed
 
 
+def validate_positive_finite_float(value: float | int | str, name: str) -> float:
+    """Validate that value parses as a finite float strictly greater than zero."""
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a positive finite number, got bool")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(
+            f"{name} must be a valid positive number, got {_safe_repr(value)}"
+        ) from exc
+    if not math.isfinite(parsed) or parsed <= 0.0:
+        raise ValueError(f"{name} must be finite and > 0, got {_safe_repr(value)}")
+    return parsed
+
+
 def validate_font_size(value: float | int | str) -> float:
     """Validate font size in points within [6.0, 72.0]."""
     return validate_finite_float(value, "font_size", FONT_SIZE_MIN, FONT_SIZE_MAX)
@@ -539,21 +554,10 @@ def compute_page_geometry(page_size: str, margin_css: str) -> PageGeometry:
     margin_top_pt = top_mm * _PT_PER_INCH / _MM_PER_INCH
     margin_bottom_pt = bottom_mm * _PT_PER_INCH / _MM_PER_INCH
 
-    numeric_fields = (
-        page_width_mm,
-        page_height_mm,
-        top_mm,
-        right_mm,
-        bottom_mm,
-        left_mm,
-        printable_width_mm,
-        printable_height_mm,
-        printable_width_px,
-        printable_height_px,
-        margin_top_pt,
-        margin_bottom_pt,
-    )
-    if not all(math.isfinite(val) for val in numeric_fields):
+    if not all(
+        math.isfinite(val)
+        for val in (printable_width_px, printable_height_px, margin_top_pt, margin_bottom_pt)
+    ):
         raise ValueError(
             f"Computed page geometry is non-finite for {_safe_repr(resolved_size)} "
             f"with margins {_safe_repr(margin_css)}"
@@ -611,26 +615,27 @@ def resolve_effective_options(
     fm = frontmatter
 
     # 1. Resolve theme name (CLI > Frontmatter > theme_spec > Global DEFAULT_THEME)
+    resolved_theme: str | None = None
     if theme is not None:
         resolved_theme = resolve_theme_name(theme, themes)
     elif fm is not None and fm.theme is not None:
         try:
             resolved_theme = resolve_theme_name(fm.theme, themes)
         except ValueError:
-            if theme_spec is not None:
-                try:
-                    resolved_theme = resolve_theme_name(theme_spec.name, themes)
-                except ValueError:
-                    resolved_theme = DEFAULT_THEME
-            else:
-                resolved_theme = DEFAULT_THEME
-    elif theme_spec is not None:
-        try:
-            resolved_theme = resolve_theme_name(theme_spec.name, themes)
-        except ValueError:
-            resolved_theme = theme_spec.name.strip().lower() or DEFAULT_THEME
-    else:
-        resolved_theme = DEFAULT_THEME
+            resolved_theme = None
+
+    if resolved_theme is None:
+        if theme_spec is not None:
+            try:
+                resolved_theme = resolve_theme_name(theme_spec.name, themes)
+            except ValueError:
+                resolved_theme = (
+                    DEFAULT_THEME
+                    if (fm is not None and fm.theme is not None)
+                    else (theme_spec.name.strip().lower() or DEFAULT_THEME)
+                )
+        else:
+            resolved_theme = DEFAULT_THEME
 
     # Select active ThemeSpec
     if themes is not None and resolved_theme in themes:
@@ -840,6 +845,7 @@ __all__ = [
     "validate_font_size",
     "validate_lang",
     "validate_line_height",
+    "validate_positive_finite_float",
     "validate_positive_int",
     "validate_spacing_scale",
 ]

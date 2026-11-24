@@ -7,8 +7,7 @@ import re
 import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from pathlib import Path, PureWindowsPath
-from urllib.parse import unquote, urlparse
+from pathlib import Path
 
 from markdown_it import MarkdownIt
 from markdown_it.common.utils import escapeHtml, unescapeAll
@@ -72,11 +71,6 @@ _TASK_ITEM_RE = re.compile(
     r"\[(?P<mark>[ xX])\](?:\s+|(?=</(?:p|li)>))",
     flags=re.IGNORECASE,
 )
-
-_WIN_SLASH_DRIVE_RE = re.compile(r"^/([A-Za-z])[:|]/(.*)$")
-_WIN_DRIVE_REL_RE = re.compile(r"^[A-Za-z]:(?![\\/])")
-_WIN_DRIVE_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
-_LOCAL_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]{1,}):")
 
 _LIST_ITEM_RE = re.compile(r"^([ ]*)((?:[-*+])|(?:\d{1,9}[.)]))([ \t]+)(.*)$")
 _THEMATIC_BREAK_RE = re.compile(
@@ -677,7 +671,7 @@ def _mask_math_spans(
         i += 1
     after_inline = "".join(out_inline)
 
-    for token, original in reversed(list(temp_masks.items())):
+    for token, original in reversed(temp_masks.items()):
         after_inline = after_inline.replace(token, original)
     return after_inline
 
@@ -884,69 +878,6 @@ def _restore_placeholders(
     return result
 
 
-def _resolve_frontmatter_css_file(
-    css_ref: str,
-    base_dir: str,
-    allow_outside_base_dir: bool,
-) -> tuple[bool, Path | None]:
-    """Check containment for a frontmatter `.css` path; return (allowed, resolved_path)."""
-    if any(ord(ch) < 32 or ord(ch) == 127 for ch in css_ref):
-        return (False, None)
-    if css_ref.startswith("//") or css_ref.startswith("\\\\"):
-        return (False, None)
-    if PureWindowsPath(css_ref).drive.startswith("\\\\"):
-        return (False, None)
-
-    scheme_match = _LOCAL_SCHEME_RE.match(css_ref)
-    if scheme_match is not None:
-        if scheme_match.group(1).lower() != "file":
-            return (False, None)
-        parsed = urlparse(css_ref)
-        if parsed.netloc.lower() not in {"", "localhost"}:
-            return (False, None)
-        decoded = unquote(parsed.path)
-        if (
-            any(ord(ch) < 32 or ord(ch) == 127 for ch in decoded)
-            or decoded.startswith("//")
-            or decoded.startswith("\\\\")
-            or decoded.startswith("/\\\\")
-            or PureWindowsPath(decoded).drive.startswith("\\\\")
-        ):
-            return (False, None)
-        win_drive = _WIN_SLASH_DRIVE_RE.match(decoded)
-        if win_drive is not None:
-            decoded = f"{win_drive.group(1)}:/{win_drive.group(2)}"
-        candidate_str = decoded
-    else:
-        decoded = unquote(css_ref)
-        if (
-            any(ord(ch) < 32 or ord(ch) == 127 for ch in decoded)
-            or decoded.startswith("//")
-            or decoded.startswith("\\\\")
-            or PureWindowsPath(decoded).drive.startswith("\\\\")
-        ):
-            return (False, None)
-        candidate_str = decoded
-
-    if _WIN_DRIVE_REL_RE.match(candidate_str):
-        return (False, None)
-    if not Path(candidate_str).is_absolute() and not _WIN_DRIVE_ABS_RE.match(candidate_str):
-        candidate_str = candidate_str.replace("\\", "/")
-
-    try:
-        base_path = Path(base_dir).resolve(strict=False)
-        raw_path = Path(candidate_str)
-        candidate = (raw_path if raw_path.is_absolute() else (base_path / raw_path)).resolve(
-            strict=False
-        )
-        if not allow_outside_base_dir and not candidate.is_relative_to(base_path):
-            return (False, None)
-    except (OSError, ValueError):
-        return (False, None)
-
-    return (True, candidate)
-
-
 def _resolve_frontmatter_css(
     options: ConversionOptions,
     fm: FrontmatterData,
@@ -966,13 +897,13 @@ def _resolve_frontmatter_css(
         and stripped.lower().endswith(".css")
     )
     if is_css_file:
-        allowed, candidate = _resolve_frontmatter_css_file(
-            stripped, base_dir, options.allow_outside_base_dir
+        allowed, exists, candidate = resolve_local_image(
+            stripped, base_dir, allow_outside_base_dir=options.allow_outside_base_dir
         )
         if not allowed or candidate is None:
             warnings.append(f"frontmatter_css_blocked: {stripped}")
             return ""
-        if not candidate.is_file():
+        if not exists:
             warnings.append(f"frontmatter_css_missing: {stripped}")
             return ""
         try:
@@ -1045,6 +976,9 @@ def _build_markdown_parser() -> MarkdownIt:
 
     md.add_render_rule("fence", _render_fence)
     return md
+
+
+_MD_PARSER = _build_markdown_parser()
 
 
 def _strip_one_indent_level(line: str) -> str:
@@ -1146,7 +1080,7 @@ def _render_footnotes(
         result = result.replace(token, sup_html)
 
         raw_fn_md = defs[fn_id]
-        for code_tok, original in reversed(list(code_masks.items())):
+        for code_tok, original in reversed(code_masks.items()):
             raw_fn_md = raw_fn_md.replace(code_tok, original)
 
         rendered_fn = md.render(raw_fn_md).strip()
@@ -1323,7 +1257,7 @@ def build_html_document(
 
     # Stage 7: Separate consecutive blockquotes, resolve theme outputs, dedup leading H1
     text = _BQ_CONSECUTIVE_RE.sub(r"\1\n<!-- mdtopdf-bq-sep -->\n\n", text)
-    for token, original in reversed(list(code_masks.items())):
+    for token, original in reversed(code_masks.items()):
         text = text.replace(token, original)
 
     resolved_theme_css, resolved_header_html, resolved_dedup = _resolve_theme_parts_lazy(
@@ -1338,9 +1272,8 @@ def build_html_document(
         text = _deduplicate_leading_h1(text, resolved_dedup)
 
     # Stage 8: Compile Markdown with CommonMark/GFM parser, footnotes, heading IDs, and TOC
-    md = _build_markdown_parser()
-    html_body = md.render(text)
-    html_body = _render_footnotes(html_body, fn_defs, fn_used, code_masks, md)
+    html_body = _MD_PARSER.render(text)
+    html_body = _render_footnotes(html_body, fn_defs, fn_used, code_masks, _MD_PARSER)
     html_body = _apply_heading_ids_and_toc(html_body, enable_toc=bool(options.toc))
 
     # Stage 9: Sanitize HTML & resolve remaining HTML <img> tags

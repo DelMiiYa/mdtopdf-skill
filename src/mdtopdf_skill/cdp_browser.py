@@ -7,7 +7,6 @@ import binascii
 import contextlib
 import hashlib
 import json
-import math
 import os
 import queue
 import re
@@ -26,7 +25,7 @@ from types import TracebackType
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from mdtopdf_skill.models import PageGeometry
+from mdtopdf_skill.models import PageGeometry, validate_positive_finite_float
 
 DEFAULT_CDP_TIMEOUT_SECONDS: float = 120.0
 DEFAULT_STARTUP_TIMEOUT_SECONDS: float = 15.0
@@ -37,6 +36,7 @@ _DEVTOOLS_URL_RE = re.compile(r"DevTools listening on (ws://127\.0\.0\.1:(\d+)(/
 _URI_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
 _WIN_SLASH_DRIVE_RE = re.compile(r"^/([A-Za-z])[:|]/(.*)$")
 _WIN_DRIVE_REL_RE = re.compile(r"^/?[A-Za-z]:(?![\\/])")
+_WIN_DRIVE_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 _SAFE_FETCH_DATA_RE = re.compile(
     r"^data:(?:image/(?:png|jpe?g|gif|webp|bmp|x-icon|vnd\.microsoft\.icon|svg\+xml|tiff|avif)"
     r"|font/(?:woff2?|ttf|otf)|application/font-woff2?)"
@@ -82,6 +82,8 @@ def _is_fetch_url_allowed(
         decoded = f"{win_drive.group(1)}:/{win_drive.group(2)}"
     if _WIN_DRIVE_REL_RE.match(decoded):
         return False
+    if sys.platform != "win32" and _WIN_DRIVE_ABS_RE.match(decoded):
+        return False
 
     try:
         candidate = Path(decoded).resolve(strict=False)
@@ -105,27 +107,14 @@ class CdpProtocolError(CdpError):
     """Raised on WebSocket handshake/framing errors, CDP RPC errors, or JS exceptions."""
 
 
-def _validate_positive_finite_float(value: float | int | str, name: str) -> float:
-    """Validate that value parses as a finite float strictly greater than zero."""
-    if isinstance(value, bool):
-        raise ValueError(f"{name} must be a positive finite number, got bool")
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(f"{name} must be a valid positive number, got {value!r}") from exc
-    if not math.isfinite(parsed) or parsed <= 0.0:
-        raise ValueError(f"{name} must be finite and > 0, got {value!r}")
-    return parsed
-
-
 def resolve_cdp_timeout(timeout: float | None = None) -> float:
     """Resolve and validate the CDP timeout in seconds (explicit > MDTOPDF_TIMEOUT > 120s)."""
     if timeout is not None:
-        return _validate_positive_finite_float(timeout, "timeout")
+        return validate_positive_finite_float(timeout, "timeout")
     env_raw = os.environ.get("MDTOPDF_TIMEOUT", "").strip()
     if not env_raw:
         return DEFAULT_CDP_TIMEOUT_SECONDS
-    return _validate_positive_finite_float(env_raw, "MDTOPDF_TIMEOUT")
+    return validate_positive_finite_float(env_raw, "MDTOPDF_TIMEOUT")
 
 
 def _candidate_browser_paths() -> list[Path]:
@@ -263,7 +252,7 @@ class CdpSession:
         )
         self.browser_version = None
         self._timeout = resolve_cdp_timeout(timeout)
-        self._startup_timeout = _validate_positive_finite_float(startup_timeout, "startup_timeout")
+        self._startup_timeout = validate_positive_finite_float(startup_timeout, "startup_timeout")
         self._allowed_file_roots: tuple[Path, ...] = tuple(
             Path(root).resolve(strict=False) for root in (allowed_file_roots or ())
         )
@@ -765,7 +754,7 @@ class CdpSession:
             payload["sessionId"] = session_id
 
         effective_timeout = (
-            _validate_positive_finite_float(timeout, "timeout")
+            validate_positive_finite_float(timeout, "timeout")
             if timeout is not None
             else self._timeout
         )
@@ -900,7 +889,7 @@ class CdpSession:
         session_id = self._require_session_id()
         target_url = _normalize_navigation_url(url_or_path)
         if timeout is not None:
-            effective_timeout = _validate_positive_finite_float(timeout, "timeout")
+            effective_timeout = validate_positive_finite_float(timeout, "timeout")
         elif self._timeout != DEFAULT_CDP_TIMEOUT_SECONDS:
             effective_timeout = self._timeout
         else:

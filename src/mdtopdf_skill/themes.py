@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import html
-import math
 
 from pygments.formatters import HtmlFormatter
 
 from mdtopdf_skill.models import (
+    _DEFAULT_THEME_SPEC,
     DEFAULT_TITLE,
     ConversionOptions,
     FrontmatterData,
@@ -19,6 +19,7 @@ from mdtopdf_skill.models import (
     validate_accent_color,
     validate_font_size,
     validate_line_height,
+    validate_positive_finite_float,
     validate_positive_int,
     validate_spacing_scale,
 )
@@ -38,27 +39,9 @@ _SERIF_FONT_STACK = (
 _MONO_FONT_STACK = (
     "'Consolas', 'JetBrains Mono', 'Noto Sans Mono', 'DejaVu Sans Mono', monospace"
 )
-_CLASSIC_FONT_STACK = (
-    "'Leelawadee UI', 'Tahoma', 'Noto Sans Thai', 'Noto Sans', "
-    "'Segoe UI Symbol', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif"
-)
-_CLASSIC_MONO_STACK = (
-    "'Consolas', 'Noto Sans Mono', 'DejaVu Sans Mono', 'Courier New', monospace"
-)
 
 THEMES: dict[str, ThemeSpec] = {
-    "classic": ThemeSpec(
-        name="classic",
-        description="Clean sans-serif layout for general documents and reports",
-        font_size_pt=9.5,
-        line_height=1.45,
-        margin_css="12mm 14mm",
-        accent_color="#0d47a1",
-        page_numbers=True,
-        font_family=_CLASSIC_FONT_STACK,
-        mono_family=_CLASSIC_MONO_STACK,
-        is_default=True,
-    ),
+    "classic": _DEFAULT_THEME_SPEC,
     "paper": ThemeSpec(
         name="paper",
         description="Academic and research papers",
@@ -107,21 +90,6 @@ def _sc(px: float) -> str:
     return f"calc({formatted}px * var(--md-spacing-scale, 1))"
 
 
-def _validate_printable_height_mm(value: float) -> float:
-    """Validate finite positive printable_height_mm."""
-    if isinstance(value, bool):
-        raise ValueError("printable_height_mm must be a finite positive number, got bool")
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(f"printable_height_mm must be a valid number, got {value!r}") from exc
-    if not math.isfinite(parsed) or parsed <= 0:
-        raise ValueError(
-            f"printable_height_mm must be finite and > 0, got {parsed!r}"
-        )
-    return parsed
-
-
 def _get_pygments_css(style_name: str) -> str:
     """Generate Pygments CSS for .highlight and .codehilite blocks."""
     formatter = HtmlFormatter(style=style_name)
@@ -145,9 +113,6 @@ def _build_theme_variant_css(
     """Generate theme-specific typography, heading, table, code, and blockquote rules."""
     break_rule = "avoid" if keep_together else "auto"
     table_font_pt = round(max(7.5, font_pt - 1.0), 1)
-    h1_pt = round(font_pt * 1.63, 1)
-    h2_pt = round(font_pt * 1.21, 1)
-    h3_pt = round(font_pt * 1.03, 1)
 
     if theme_name == "paper":
         return f"""
@@ -273,6 +238,9 @@ hr {{
 """
 
     # Default: "classic"
+    h1_pt = round(font_pt * 1.63, 1)
+    h2_pt = round(font_pt * 1.21, 1)
+    h3_pt = round(font_pt * 1.03, 1)
     return f"""
 body {{
     font-family: {theme_spec.font_family};
@@ -424,7 +392,7 @@ def build_theme_css(options: ConversionOptions, printable_height_mm: float) -> s
     spacing_scale = validate_spacing_scale(options.spacing_scale)
     img_w = validate_positive_int(options.img_max_width, "img_max_width")
     img_h = validate_positive_int(options.img_max_height, "img_max_height")
-    printable_h = _validate_printable_height_mm(printable_height_mm)
+    printable_h = validate_positive_finite_float(printable_height_mm, "printable_height_mm")
 
     mermaid_max_height_mm = min(printable_h, max(1.0, printable_h - 8.0))
     pygments_css = _get_pygments_css("default")
@@ -707,17 +675,11 @@ li.task-item input[type="checkbox"] {{
 
 def _render_meta_items(
     fm: FrontmatterData,
-    priority_order: tuple[str, ...],
-    container_class: str,
+    field_order: tuple[str, ...],
 ) -> str:
-    """Render non-empty metadata fields in priority order inside a container."""
-    ordered_fields: list[str] = list(priority_order)
-    for field_name in _STRUCTURED_META_FIELDS:
-        if field_name not in ("subtitle", "abstract") and field_name not in ordered_fields:
-            ordered_fields.append(field_name)
-
+    """Render non-empty metadata fields in priority order inside .doc-header-meta."""
     items: list[str] = []
-    for field_name in ordered_fields:
+    for field_name in field_order:
         val = _clean_opt_str(getattr(fm, field_name))
         if val is None:
             continue
@@ -730,7 +692,7 @@ def _render_meta_items(
 
     if not items:
         return ""
-    return f'<div class="{container_class}">{"".join(items)}</div>'
+    return f'<div class="doc-header-meta">{"".join(items)}</div>'
 
 
 def build_metadata_header_html(
@@ -770,7 +732,7 @@ def build_metadata_header_html(
         if theme_name == "paper"
         else ("author", "date", "affiliation")
     )
-    meta_html = _render_meta_items(fm, priority_order, "doc-header-meta")
+    meta_html = _render_meta_items(fm, priority_order)
     if meta_html:
         parts.append(meta_html)
 

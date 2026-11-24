@@ -1,9 +1,8 @@
-"""Phase 2+ browser-free E2E requirements, asset integrity, and governance tests.
+"""Browser-free packaging, asset integrity, and opaque-box governance tests.
 
-This module intentionally has NO ``@pytest.mark.e2e`` marker and zero imports of
-unimplemented Phase 2-4 submodules (``cli``, ``themes``, ``sanitizer``,
-``markdown_pipeline``, ``cdp_browser``, ``autofit``, ``renderer``) or legacy
-``mdtopdf_core`` so it passes immediately during parallel Phase 2 development.
+This module intentionally has NO ``@pytest.mark.e2e`` marker and avoids importing
+internal rendering/CLI submodules so packaging, assets, and opaque-box isolation
+in ``tests/test_e2e_tiers.py`` can be verified independently.
 """
 
 from __future__ import annotations
@@ -51,7 +50,7 @@ DECISIONS_PATH = REPO_ROOT / "docs" / "DECISIONS.md"
 README_PATH = REPO_ROOT / "README.md"
 TIERS_TEST_PATH = REPO_ROOT / "tests" / "test_e2e_tiers.py"
 
-_UNIMPLEMENTED_V1_SUBMODULES = frozenset(
+_INTERNAL_SUBMODULES = frozenset(
     {
         "cli",
         "themes",
@@ -442,7 +441,7 @@ class TestE2ETiersGovernance:
                     )
                     if alias.name.startswith("mdtopdf_skill."):
                         submod = alias.name.split(".", 2)[1]
-                        assert submod not in _UNIMPLEMENTED_V1_SUBMODULES, (
+                        assert submod not in _INTERNAL_SUBMODULES, (
                             f"Opaque-box violation: {alias.name}"
                         )
             elif isinstance(node, ast.ImportFrom):
@@ -453,12 +452,12 @@ class TestE2ETiersGovernance:
                 )
                 if mod == "mdtopdf_skill":
                     for alias in node.names:
-                        assert alias.name not in _UNIMPLEMENTED_V1_SUBMODULES, (
+                        assert alias.name not in _INTERNAL_SUBMODULES, (
                             f"Opaque-box violation: from mdtopdf_skill import {alias.name}"
                         )
                 elif mod.startswith("mdtopdf_skill."):
                     submod = mod.split(".", 2)[1]
-                    assert submod not in _UNIMPLEMENTED_V1_SUBMODULES, (
+                    assert submod not in _INTERNAL_SUBMODULES, (
                         f"Opaque-box violation: from {mod} import ..."
                     )
 
@@ -467,7 +466,7 @@ class TestE2ETiersGovernance:
         has_module_pytestmark = any(
             isinstance(node, ast.Assign)
             and any(isinstance(t, ast.Name) and t.id == "pytestmark" for t in node.targets)
-            and "pytest.mark.e2e" in ast.get_source_segment(source, node.value)  # type: ignore[operator]
+            and "pytest.mark.e2e" in (ast.get_source_segment(source, node.value) or "")
             for node in tree.body
         )
         assert has_module_pytestmark, "test_e2e_tiers.py must define pytestmark = pytest.mark.e2e"

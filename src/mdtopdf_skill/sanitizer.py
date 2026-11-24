@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import html
 import re
+import sys
 from html.parser import HTMLParser
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from urllib.parse import unquote, urlparse
 
 __all__ = [
@@ -444,7 +445,11 @@ def resolve_local_image(
             return (True, True, None)
         return (False, False, None)
 
-    if raw.startswith("//") or raw.startswith("\\\\"):
+    if (
+        raw.startswith("//")
+        or raw.startswith("\\\\")
+        or PureWindowsPath(raw).drive.startswith("\\\\")
+    ):
         return (False, False, None)
 
     scheme_match = _LOCAL_URI_SCHEME_RE.match(raw)
@@ -462,6 +467,7 @@ def resolve_local_image(
             decoded_path.startswith("//")
             or decoded_path.startswith("\\\\")
             or decoded_path.startswith("/\\\\")
+            or PureWindowsPath(decoded_path).drive.startswith("\\\\")
         ):
             return (False, False, None)
         win_drive = _WIN_SLASH_DRIVE_RE.match(decoded_path)
@@ -474,13 +480,19 @@ def resolve_local_image(
         decoded_path = unquote(raw)
         if _has_control_chars(decoded_path):
             return (False, False, None)
-        if decoded_path.startswith("//") or decoded_path.startswith("\\\\"):
+        if (
+            decoded_path.startswith("//")
+            or decoded_path.startswith("\\\\")
+            or PureWindowsPath(decoded_path).drive.startswith("\\\\")
+        ):
             return (False, False, None)
         if _WIN_DRIVE_REL_RE.match(decoded_path):
             return (False, False, None)
         candidate_str = decoded_path
 
     if not candidate_str:
+        return (False, False, None)
+    if sys.platform != "win32" and _WIN_DRIVE_ABS_RE.match(candidate_str):
         return (False, False, None)
 
     if not Path(candidate_str).is_absolute() and not _WIN_DRIVE_ABS_RE.match(candidate_str):

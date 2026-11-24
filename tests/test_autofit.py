@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import io
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -40,8 +41,6 @@ def _make_pdf_bytes(page_specs: list[dict[str, Any]]) -> bytes:
             for img_rect_tuple in spec.get("images", []):
                 rect = pymupdf.Rect(*img_rect_tuple)  # type: ignore[no-untyped-call]
                 img = PIL.Image.new("RGB", (20, 20), (30, 100, 200))
-                import io
-
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
                 page.insert_image(rect, stream=buf.getvalue())

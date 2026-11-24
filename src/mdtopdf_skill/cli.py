@@ -8,9 +8,9 @@ import json
 import re
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path, PureWindowsPath
-from typing import NoReturn
+from typing import Any, NoReturn, TypeVar
 
 from mdtopdf_skill import __version__
 from mdtopdf_skill.cdp_browser import find_browser_executable
@@ -110,8 +110,8 @@ class CliArgumentError(ValueError, SystemExit):
 class _CliArgumentParser(argparse.ArgumentParser):
     """ArgumentParser subclass raising CliArgumentError instead of exiting directly."""
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+    def __init__(self, prog: str, description: str) -> None:
+        super().__init__(prog=prog, description=description)
         self._negative_number_matcher = re.compile(
             r"^-(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$|^-(?:inf|infinity|nan)$",
             flags=re.IGNORECASE,
@@ -131,10 +131,13 @@ def _configure_stdio_utf8() -> None:
                     stream.reconfigure(encoding="utf-8", errors="replace")
 
 
-def _wrap_validation(func: object, *args: object) -> object:
+_T = TypeVar("_T")
+
+
+def _wrap_validation(func: Callable[..., _T], *args: Any) -> _T:
     """Run a models.py validator, translating ValueError into CliArgumentError."""
     try:
-        return func(*args)  # type: ignore[operator]
+        return func(*args)
     except ValueError as exc:
         raise CliArgumentError(str(exc)) from exc
 
