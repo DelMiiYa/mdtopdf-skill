@@ -565,8 +565,9 @@ class TestOutputDirectoryWritabilityAndIoErrors:
             def reconfigure(self, **kwargs: Any) -> None:
                 reconfigured.append(kwargs)
 
-        monkeypatch.setattr(sys, "stdout", _DummyStream())
-        cli._configure_stdio_utf8()
+        with monkeypatch.context() as mp:
+            mp.setattr(sys, "stdout", _DummyStream())
+            cli._configure_stdio_utf8()
         assert reconfigured[0]["encoding"] == "utf-8"
 
         monkeypatch.setattr(sys, "argv", ["mdtopdf", "--version"])
